@@ -1,13 +1,33 @@
 import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX} from './symbolic.js';
+  hasEmptyRealDomain, substituteNegX, simplify, formalLimit, antiderivative} from './symbolic-extended.js?v=0.2';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
 }
 const initialBoard = () => [fromCard('ONE'),fromCard('X'),fromCard('X2')];
-const MAX_EXPRESSION_SIZE=95;
+const MAX_EXPRESSION_SIZE=175;
+const MAX_DISPLAY_LENGTH=2000;
+const SOFT_SIZE=110, SOFT_LENGTH=260;
+function safeDerivative(e){
+  try {const out=derivative(e);if(expressionSize(out)<SOFT_SIZE&&display(out).length<SOFT_LENGTH)return out;}
+  catch(error){if(!(error instanceof Unsupported||error instanceof RangeError))throw error;}
+  return e.t==='D'?{t:'D',arg:e.arg,order:(e.order||1)+1}:{t:'D',arg:e,order:1};
+}
+function safeIntegral(e,C){
+  try {const out=integrate(e,C);if(expressionSize(out)<SOFT_SIZE&&display(out).length<SOFT_LENGTH)return out;}
+  catch(error){if(!(error instanceof Unsupported||error instanceof RangeError))throw error;}
+  return add(antiderivative(e),constant(C));
+}
+/** Restore saved games made by older, less aggressive formula simplifiers. */
+export function normalizeGame(game){
+  const state=copy(game);
+  state.boards=state.boards.map(board=>reduceBasis(board.map(e=>{
+    try{return simplify(e);}catch{return e;}
+  })).kept);
+  return state;
+}
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
   const deck=shuffle(makeDeck(extended),random);
   const hands=[[],[]];
@@ -41,8 +61,8 @@ export function validate(s,move) {
 }
 function opSingle(id,basis,move,partner) {
   switch(id){
-    case 'DIFF':return derivative(basis);
-    case 'INTEGRATE':return integrate(basis,move.C);
+    case 'DIFF':return safeDerivative(basis);
+    case 'INTEGRATE':return safeIntegral(basis,move.C);
     case 'MUL':return mul(basis,partner);
     case 'DIV': {
       const numerator = move.direction==='cardOverBasis'?partner:basis;
@@ -59,8 +79,11 @@ function opSingle(id,basis,move,partner) {
       const result=id==='LIMSUP'||id==='LIMINF'?
         oscillatoryLimit(basis,id==='LIMSUP'?'sup':'inf'):
         limit(basis,id==='LIM_PLUS'?'plus':id==='LIM_MINUS'?'minus':'zero', move.side||'two');
-      if(result.type==='undefined')throw new Unsupported('この極限は未確定、または試作版で証明できません');
-      return result.type==='infinity'?constant(0):constant(result.v);
+      if(result.type==='nonexistent')throw new Unsupported('この方向の極限は存在しません');
+      if(result.type==='infinity')return constant(0);
+      if(result.type==='finite')return constant(result.v);
+      if(result.type==='symbolic')return result.expr;
+      return formalLimit(basis,id==='LIM_PLUS'||id==='LIMSUP'||id==='LIMINF'?'plus':id==='LIM_MINUS'?'minus':'zero',move.side||'two',id==='LIMSUP'?'limsup':id==='LIMINF'?'liminf':'lim');
     }
     default:throw new Unsupported('未対応カードです');
   }
@@ -78,8 +101,8 @@ function finish(state) {
 export function applyMove(s,move) {
   if(move.discard) {
     const ns=copy(s),actor=ns.turn;
-    if(s.finished||!s.hands[actor][move.cardIndex])throw new Unsupported('捨て札にできません');
-    ns.log.unshift(`${actor===0?'あなた':'COM'}：手詰まりのためカードを1枚交換`);
+    if(s.finished||!ns.deck.length||!Number.isInteger(move.cardIndex)||move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('捨て札にできません');
+    ns.log.unshift(`${actor===0?'あなた':'COM'}：カードを1枚交換（ターン消費）`);
     ns.hands[actor].splice(move.cardIndex,1);draw(ns,actor,1);
     ns.turn=1-actor;ns.turns++;finish(ns);return ns;
   }
@@ -90,19 +113,19 @@ export function applyMove(s,move) {
     own.push(fromCard(id));
     info=`${card.label} を基底に追加`;
   } else if(card.kind==='global') {
-    const transformed=own.map(e=>id==='DELTA'?derivative(derivative(e)):derivative(e));
+    const transformed=own.map(e=>id==='DELTA'?safeDerivative(safeDerivative(e)):safeDerivative(e));
     own.splice(0,own.length,...transformed);
     info=`場全体を${id==='DELTA'?'2階':'1階'}微分`;
   } else {
     const before=display(own[move.target]);
     const partner=card.kind==='binary'?fromCard(s.hands[actor][move.partnerIndex]):null;
     let after=opSingle(id,own[move.target],move,partner);
-    if(!after || expressionSize(after)>MAX_EXPRESSION_SIZE)throw new Unsupported('式が大きすぎるため、この操作は実行できません');
+    if(!after || expressionSize(after)>MAX_EXPRESSION_SIZE || display(after).length>MAX_DISPLAY_LENGTH)throw new Unsupported('この式は巨大なため安全上制限しています。カード交換も利用できます');
     own[move.target]=after;
     info=`${before} → ${display(after)}`;
     if(partner)used.push(move.partnerIndex);
   }
-  if(ns.boards[move.owner].some(e=>expressionSize(e)>MAX_EXPRESSION_SIZE))throw new Unsupported('式が大きすぎます');
+  if(ns.boards[move.owner].some(e=>expressionSize(e)>MAX_EXPRESSION_SIZE||display(e).length>MAX_DISPLAY_LENGTH))throw new Unsupported('式が大きすぎます');
   const preCount=own.length;
   const resolved=reduceBasis(own);
   ns.boards[move.owner]=resolved.kept;
@@ -149,7 +172,7 @@ export function legalMoves(s,{limit=2500}={}) {
       }
     }
   }
-  if(!moves.length) return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i}));
+  if(!moves.length&&s.deck.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i}));
   return moves;
 }
 function valueOf(e) {
