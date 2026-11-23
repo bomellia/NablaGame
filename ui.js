@@ -1,6 +1,6 @@
-import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.2';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.2';
-import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.5';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.6';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.6';
+import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.6';
 const $=id=>document.getElementById(id);
 const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
 const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
@@ -30,6 +30,7 @@ function load() {
 }
 function start() {
   gameSerial++;
+  if(comWorker){comWorker.terminate();comWorker=null;}
   thinking=false;
   game=newGame({extended:$('extended').checked,difficulty:$('difficulty').value});
   selection={cardIndex:0,owner:1,target:0,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard'};
@@ -74,7 +75,7 @@ function actionMarkup() {
   if(card.kind==='constant')opts+=`<label class="input-group">${id==='INTEGRATE'?'積分定数':'加算する定数'} C<select id="constant-select">${CONSTANTS.filter(c=>id!=='PLUS_C'||c!==0).map(c=>`<option value="${c}" ${selection.C===c?'selected':''}>${c}</option>`).join('')}</select></label>`;
   if(card.kind==='limitZero')opts+=`<label class="input-group">極限の方向<select id="side-select"><option value="two" ${selection.side==='two'?'selected':''}>両側</option><option value="plus" ${selection.side==='plus'?'selected':''}>右側（+0）</option><option value="minus" ${selection.side==='minus'?'selected':''}>左側（−0）</option></select></label>`;
   const summary=result.ok?`操作可能。次元の変化：あなた ${result.delta[0]>0?'+':''}${result.delta[0]} / COM ${result.delta[1]>0?'+':''}${result.delta[1]}${result.state.boards.some(board=>board.some(containsFormal))?'（未評価の式を含む）':''}`:result.reason;
-  return `<div class="swap-note">現在の手で計算しづらいときは、カードを1枚交換できます（ターン消費）。</div><div class="action-header"><div><div class="action-title">${escapeHtml(card.label)} を使用</div><div class="action-desc">${escapeHtml(card.description)}</div></div><div class="action-target">対象：${escapeHtml(targetText)}</div></div><div class="action-row">${opts}<div class="preview ${result.ok?'':'invalid'}" role="status">${escapeHtml(summary)}</div><button class="hint-button" id="hint-btn" type="button">合法手を提案</button><button class="hint-button swap-button" id="swap-btn" type="button" ${game.deck.length?'':'disabled'}>選択中のカードを交換</button><button id="act-btn" class="act-button" type="button" ${result.ok?'':'disabled'}>操作する</button></div>`;
+  return `<div class="action-header"><div><div class="action-title"><span class="action-symbol">${cardHtml(id)}</span> を使用</div><div class="action-desc">${escapeHtml(card.description)}</div></div><div class="action-target">${escapeHtml(targetText)}</div></div><div class="action-row"><div class="action-options">${opts}</div><div class="preview ${result.ok?'':'invalid'}" role="status" title="${escapeHtml(summary)}">${escapeHtml(summary)}</div></div><div class="action-buttons"><button class="hint-button" id="hint-btn" type="button">提案</button><button class="hint-button swap-button" id="swap-btn" type="button" ${game.deck.length?'':'disabled'}>交換</button><button id="act-btn" class="act-button" type="button" ${result.ok?'':'disabled'}>操作する</button></div>`;
 }
 function render() {
   syncSelection();
@@ -83,10 +84,12 @@ function render() {
   $('hand').innerHTML=handMarkup();$('action-panel').innerHTML=actionMarkup();
   $('hand-count').textContent=`${game.hands[0].length}枚`;
   $('deck-count').textContent=`山札 ${game.deck.length} 枚`;
+  $('deck-mini').textContent=`山札 ${game.deck.length}`;
   $('turn-indicator').textContent=game.finished?'対戦終了':game.turn===0?'あなたのターン':'COMのターン';
   $('turn-indicator').classList.toggle('busy',game.turn===1&&!game.finished);
   $('event-text').textContent=game.log[0];
   $('log').innerHTML=game.log.slice(0,8).map(t=>`<div class="log-item">${escapeHtml(t)}</div>`).join('');
+  $('log-mobile').innerHTML=game.log.map(t=>`<div class="log-item">${escapeHtml(t)}</div>`).join('');
 }
 function setSelectionFromMove(move){
   selection.cardIndex=move.cardIndex;selection.owner=move.owner;selection.target=move.target??0;
@@ -95,17 +98,52 @@ function setSelectionFromMove(move){
   if(move.side!==undefined)selection.side=move.side;
   if(move.direction!==undefined)selection.direction=move.direction;
 }
+let comWorker=null;
 function runCom(){
   if(game.finished||game.turn!==1)return;
   const runningGame=gameSerial;
   thinking=true;render();
-  setTimeout(()=>{
+  // Module workers are supported by GitHub Pages and keep the main screen
+  // responsive while the COM evaluates potentially expensive symbolic moves.
+  let ended=false;
+  let watchdog=null;
+  let worker=null;
+  const finalize=(move)=>{
+    if(ended)return;
+    ended=true;
+    if(watchdog!==null)clearTimeout(watchdog);
+    if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}
     if(runningGame!==gameSerial||game.turn!==1||game.finished)return;
-    const move=chooseComMove(game);
-    if(move)game=applyMove(game,move);
+    try{
+      const candidate=move&&preview(game,move).ok?move:null;
+      // COM may give up a card on extremely complex positions instead of
+      // making the browser appear frozen indefinitely.
+      const safeMove=candidate||(game.deck.length?{discard:true,cardIndex:0}:null);
+      if(safeMove)game=applyMove(game,safeMove);
+    }catch(error){
+      if(game.deck.length)game=applyMove(game,{discard:true,cardIndex:0});
+      else game.log.unshift('COMの演算に失敗しました。対戦を再開してください。');
+    }
     thinking=false;selection.cardIndex=0;selection.owner=1;selection.target=0;selection.partnerIndex=-1;
     save();render();
-  },360);
+  };
+  try{
+    worker=new Worker('./com-worker.js?v=0.6',{type:'module'});
+    comWorker=worker;
+    watchdog=setTimeout(()=>finalize(null),3000);
+    worker.onmessage=event=>finalize(event.data?.move||null);
+    worker.onerror=()=>finalize(null);
+    worker.postMessage(game);
+  }catch{
+    // Browsers which forbid module workers retain the non-worker fallback.
+    if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}
+    setTimeout(()=>{
+      if(runningGame!==gameSerial||ended)return;
+      let move=null;
+      try{move=chooseComMove(game);}catch{}
+      finalize(move);
+    },100);
+  }
 }
 function takeTurn(move){
   const r=preview(game,move);
@@ -114,7 +152,7 @@ function takeTurn(move){
   save();render();runCom();
 }
 function hint(){
-  const moves=legalMoves(game);
+  const moves=legalMoves(game,{limit:350,perCardOwner:24});
   if(!moves.length)return;
   const best=[...moves].sort((a,b)=>{
     const da=a.scoreDelta||[0,0],db=b.scoreDelta||[0,0];
@@ -129,10 +167,11 @@ function handleClick(e){
   if(elem.dataset.card!==undefined) {selection.cardIndex=Number(elem.dataset.card);selection.partnerIndex=-1;selection.C=selectedCard()==='PLUS_C'?1:0;render();return;}
   if(elem.dataset.owner!==undefined){
     const owner=Number(elem.dataset.owner),idx=Number(elem.dataset.index);
-    if(selection.owner===owner&&selection.target===idx&&game.boards[owner]?.[idx]){
-      $('formula-title').textContent=(owner===1?'COM':'あなた')+' の基底 '+(idx+1);
+    if(selection.owner===owner&&selection.target===idx){
+      $('formula-title').textContent=`${owner===1?'COM':'あなた'} 基底 ${idx+1}`;
       $('formula-body').innerHTML=formulaHtml(game.boards[owner][idx]);
-      $('formula-dialog').showModal();return;
+      $('formula-dialog').showModal();
+      return;
     }
     selection.owner=owner;selection.target=idx;render();return;
   }
@@ -144,8 +183,11 @@ function handleClick(e){
     start();
   }
   if(elem.id==='help-btn')$('help-dialog').showModal();
-  if(elem.id==='close-help')$('help-dialog').close();
+  if(elem.id==='settings-btn')$('settings-panel').classList.toggle('show');
+  if(elem.id==='history-btn')$('log-dialog').showModal();
+  if(elem.id==='close-log')$('log-dialog').close();
   if(elem.id==='close-formula')$('formula-dialog').close();
+  if(elem.id==='close-help')$('help-dialog').close();
 }
 document.addEventListener('click',handleClick);
 document.addEventListener('change',e=>{
@@ -159,4 +201,6 @@ document.addEventListener('change',e=>{
 const prior=load();
 if(prior){game=prior;$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}
 else start();
+
+// Re-typeset after the deferred KaTeX script loads (fallback stays readable offline).
 window.addEventListener('load',()=>{if(game)render();});

@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.6';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, formalLimit, antiderivative} from './symbolic-extended.js?v=0.2';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.6';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -20,12 +20,35 @@ function safeIntegral(e,C){
   catch(error){if(!(error instanceof Unsupported||error instanceof RangeError))throw error;}
   return add(antiderivative(e),constant(C));
 }
+/** A legacy formal limit was never proven. It must not take part in scoring. */
+function hasLegacyLimit(e){
+  return !!e && (e.t==='L' || (e.arg && hasLegacyLimit(e.arg)) ||
+    (e.b && hasLegacyLimit(e.b)) || (Array.isArray(e.v) && e.v.some(hasLegacyLimit)));
+}
 /** Restore saved games made by older, less aggressive formula simplifiers. */
 export function normalizeGame(game){
   const state=copy(game);
-  state.boards=state.boards.map(board=>reduceBasis(board.map(e=>{
-    try{return simplify(e);}catch{return e;}
-  })).kept);
+  let removed=0;
+  state.boards=state.boards.map(board=>{
+    const accepted=[];
+    for(const expr of board){
+      // Re-evaluating a legacy unproved limit is unsafe: it may be oscillatory,
+      // zero or divergent. Remove it until a future domain-aware migration exists.
+      if(hasLegacyLimit(expr)){removed++;continue;}
+      try{accepted.push(simplify(expr));}catch{accepted.push(expr);}
+    }
+    return reduceBasis(accepted).kept;
+  });
+  if(removed){
+    state.log=Array.isArray(state.log)?state.log:[];
+    state.log.unshift(`旧版の未証明の極限式を${removed}個除外しました。勝敗判定には使用できません。`);
+    state.log=state.log.slice(0,16);
+    if(state.boards.some(b=>b.length===0)){
+      state.finished=true;
+      const a=state.boards[0].length,b=state.boards[1].length;
+      state.winner=a===b?-1:a>b?0:1;
+    }
+  }
   return state;
 }
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
@@ -79,11 +102,11 @@ function opSingle(id,basis,move,partner) {
       const result=id==='LIMSUP'||id==='LIMINF'?
         oscillatoryLimit(basis,id==='LIMSUP'?'sup':'inf'):
         limit(basis,id==='LIM_PLUS'?'plus':id==='LIM_MINUS'?'minus':'zero', move.side||'two');
-      if(result.type==='nonexistent')throw new Unsupported('この方向の極限は存在しません');
+      if(result.type==='nonexistent')throw new Unsupported('この極限は振動・左右差などにより存在しません');
       if(result.type==='infinity')return constant(0);
       if(result.type==='finite')return constant(result.v);
-      if(result.type==='symbolic')return result.expr;
-      return formalLimit(basis,id==='LIM_PLUS'||id==='LIMSUP'||id==='LIMINF'?'plus':id==='LIM_MINUS'?'minus':'zero',move.side||'two',id==='LIMSUP'?'limsup':id==='LIMINF'?'liminf':'lim');
+      if(result.type==='symbolic')return result.expr; // continuity gives a proven symbolic constant
+      throw new Unsupported('極限の収束・発散を厳密に判定できません（未評価のまま使用不可）');
     }
     default:throw new Unsupported('未対応カードです');
   }
@@ -148,12 +171,14 @@ export function preview(s,move) {
     throw e;
   }
 }
-export function legalMoves(s,{limit=2500}={}) {
+export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=false}={}) {
   if(s.finished)return [];
   const moves=[];
   for(let i=0;i<s.hands[s.turn].length;i++) {
     const card=CARD_MAP[s.hands[s.turn][i]];
+    if(!card)continue;
     for(let owner=0;owner<2;owner++) {
+      let accepted=0;
       const indices=card.kind==='function'||card.kind==='global'?[null]:s.boards[owner].map((_,j)=>j);
       for(const target of indices) {
         let choices=[{}];
@@ -167,8 +192,14 @@ export function legalMoves(s,{limit=2500}={}) {
         for(const opts of choices) {
           const move={cardIndex:i,owner,target,...opts};
           const result=preview(s,move);
-          if(result.ok){moves.push({...move,scoreDelta:result.delta});if(moves.length>=limit)return moves;}
+          if(result.ok){
+            moves.push({...move,scoreDelta:result.delta,...(includeState?{nextState:result.state}:{})});
+            accepted++;
+            if(moves.length>=limit)return moves;
+            if(accepted>=perCardOwner)break;
+          }
         }
+        if(accepted>=perCardOwner)break;
       }
     }
   }
@@ -197,16 +228,17 @@ function scoreMove(state,move,after,difficulty) {
   return raw+Math.random()*5;
 }
 export function chooseComMove(s) {
-  const moves=legalMoves(s);
+  // Search both players for every card instead of exhausting the first cards.
+  // Preview results are reused for scoring, avoiding duplicate CAS work.
+  const moves=legalMoves(s,{limit:350,perCardOwner:24,includeState:true});
   if(!moves.length)return null;
   let best=moves[0],bestScore=-Infinity;
   for(const move of moves){
-    const next=preview(s,move);
-    if(!next.ok)continue;
-    const score=scoreMove(s,move,next.state,s.difficulty);
+    const score=move.discard?(-1000+Math.random()):scoreMove(s,move,move.nextState,s.difficulty);
     if(score>bestScore){bestScore=score;best=move;}
   }
-  return best;
+  const {nextState,scoreDelta,...chosen}=best;
+  return chosen;
 }
 export function getCard(id){return CARD_MAP[id];}
 export {display};

@@ -1,8 +1,70 @@
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.2';
-export * from './symbolic.js?v=0.2';
-const n=base.constant, X=base.x, f=base.fn, add=base.add, mul=base.mul, pow=base.pow, div=base.div;
+import * as base from './symbolic.js?v=0.6';
+export * from './symbolic.js?v=0.6';
+const n=base.constant, X=base.x, add=base.add, pow=base.pow;
+// Canonicalize basic trigonometric quotients before they become large trees.
+// tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
+// this rewriting does not add points to the real domain.
+export function fn(name,arg){
+ if(arg?.t==='n'){
+  const v=arg.v;
+  if(name==='tan'){
+   if(Math.abs(Math.cos(v))<1e-10)throw new base.Unsupported('tan の極に当たります');
+   return n(Math.tan(v));
+  }
+  if(name==='cot'){
+   if(Math.abs(Math.sin(v))<1e-10)throw new base.Unsupported('cot の極に当たります');
+   return n(1/Math.tan(v));
+  }
+  if(name==='sec'){
+   if(Math.abs(Math.cos(v))<1e-10)throw new base.Unsupported('sec の極に当たります');
+   return n(1/Math.cos(v));
+  }
+  if(name==='csc'){
+   if(Math.abs(Math.sin(v))<1e-10)throw new base.Unsupported('csc の極に当たります');
+   return n(1/Math.sin(v));
+  }
+  if(name==='sinh')return n(Math.sinh(v));
+  if(name==='cosh')return n(Math.cosh(v));
+  if(name==='tanh')return n(Math.tanh(v));
+  if(name==='atan')return n(Math.atan(v));
+ }
+ if(arg?.t==='m'&&arg.v[0]?.t==='n'&&arg.v[0].v===-1&&['tan','cot','sec','csc'].includes(name)){
+  const pos=base.mul(...arg.v.slice(1));
+  return ['tan','cot','csc'].includes(name)?base.mul(n(-1),fn(name,pos)):fn(name,pos);
+ }
+ return base.fn(name,arg);
+}
+const f=fn;
+export function mul(...parts){
+ const e=base.mul(...parts);
+ if(e.t!=='m')return e;
+ // A single numerator and denominator trig factor with the same argument.
+ const factors=[...e.v];
+ for(let i=0;i<factors.length;i++){
+  const v=factors[i];
+  if(v?.t!=='f'||!['sin','cos'].includes(v.f))continue;
+  const other=v.f==='sin'?'cos':'sin';
+  const j=factors.findIndex((w,k)=>k!==i&&w?.t==='p'&&w.e===-1&&w.b?.t==='f'&&w.b.f===other&&base.sig(w.b.arg)===base.sig(v.arg));
+  if(j>=0){
+   const name=v.f==='sin'?'tan':'cot';
+   return base.mul(f(name,v.arg),...factors.filter((_,k)=>k!==i&&k!==j));
+  }
+ }
+ return e;
+}
+export function div(a,b){
+ if(a?.t==='f'&&b?.t==='f'&&base.sig(a.arg)===base.sig(b.arg)){
+  if(a.f==='sin'&&b.f==='cos')return f('tan',a.arg);
+  if(a.f==='cos'&&b.f==='sin')return f('cot',a.arg);
+ }
+ if(a?.t==='n'&&a.v===1&&b?.t==='f'){
+  if(b.f==='cos')return f('sec',b.arg);
+  if(b.f==='sin')return f('csc',b.arg);
+ }
+ return mul(a,pow(b,-1));
+}
 const neg = a => mul(n(-1),a);
 const finite = v => ({type:'finite',v});
 const P={type:'infinity',sign:1}, M={type:'infinity',sign:-1};
@@ -11,7 +73,7 @@ const symbolic = expr => ({type:'symbolic',expr});
 const close=(a,b)=>Math.abs(a-b)<1e-8;
 export const antiderivative=(arg,order=1)=>({t:'I',arg,order});
 export const formalLimit=(arg,point='plus',side='two',kind='lim')=>({t:'L',arg,point,side,kind});
-function independent(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&independent(e.arg)||e.b&&independent(e.b)||Array.isArray(e.v)&&e.v.some(independent)||e.t==='f'&&['Li','Ei','Si','Ci','erf','erfi','FresnelS','FresnelC','Shi','Chi','abs'].includes(e.f));}
+function independent(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&independent(e.arg)||e.b&&independent(e.b)||Array.isArray(e.v)&&e.v.some(independent)||e.t==='f'&&['Li','Ei','Si','Ci','erf','erfi','FresnelS','FresnelC','Shi','Chi','abs','tan','cot','sec','csc','atan','tanh','sinh','cosh'].includes(e.f));}
 function derivativeFn(e){
  const a=e.arg, da=derivative(a), df=v=>mul(v,da);
  switch(e.f){
@@ -37,6 +99,10 @@ function derivativeFn(e){
   case 'sinh':return df(f('cosh',a));
   case 'cosh':return df(f('sinh',a));
   case 'tanh':return div(da,pow(f('cosh',a),2));
+  case 'tan':return div(da,pow(f('cos',a),2));
+  case 'cot':return neg(div(da,pow(f('sin',a),2)));
+  case 'sec':return mul(f('sec',a),f('tan',a),da);
+  case 'csc':return neg(mul(f('csc',a),f('cot',a),da));
   default:return {t:'D',arg:e,order:1};
  }
 }
@@ -56,6 +122,12 @@ export function derivative(e){
 function slope(expr){const lm=base.linearForm(expr);if(!lm||[...lm.keys()].some(k=>k!=='1'&&k!=='x'))return null;return lm.get('x')||null;}
 function quadratic(expr){const [c,expr2] = expr.t==='m'&&expr.v[0].t==='n'?[expr.v[0].v,expr.v.length===2?expr.v[1]:null]:[1,expr];return expr2?.t==='p'&&expr2.b.t==='x'&&close(expr2.e,2)?c:null;}
 function specialAntiderivative(e){
+ // arctangent: d/dx atan(x) = 1/(1+x²).
+ if(e.t==='p'&&e.e===-1&&e.b?.t==='a'&&e.b.v.length===2){
+   const one=e.b.v.some(v=>v.t==='n'&&close(v.v,1));
+   const sq=e.b.v.some(v=>v.t==='p'&&v.b.t==='x'&&close(v.e,2));
+   if(one&&sq)return f('atan',X());
+ }
  // li(x)=Ei(log x), real logarithmic integral on x>0 away from its pole x=1.
  if(e.t==='p'&&e.e===-1&&e.b.t==='f'&&e.b.f==='log'&&e.b.arg.t==='x')return f('Li',X());
  const parts=e.t==='m'?e.v:[e];
@@ -82,6 +154,11 @@ function specialAntiderivative(e){
 }
 function integralInner(e){
  const special=specialAntiderivative(e);if(special)return special;
+ // Derivatives of tan and cot provide elementary antiderivatives of sec² and csc².
+ if(e.t==='p'&&e.e===-2&&e.b?.t==='f'&&e.b.arg?.t==='x'){
+  if(e.b.f==='cos')return f('tan',X());
+  if(e.b.f==='sin')return neg(f('cot',X()));
+ }
  if(e.t==='I')return antiderivative(e.arg,(e.order||1)+1);
  if(e.t==='D')return (e.order||1)===1?e.arg:{t:'D',arg:e.arg,order:e.order-1};
  if(e.t==='L')return mul(e,X());
@@ -98,6 +175,9 @@ function integralInner(e){
    }
  }
  if(e.t==='f'&&e.arg.t==='x'){
+   if(e.f==='tan')return neg(f('logabs',f('cos',X())));
+   if(e.f==='cot')return f('logabs',f('sin',X()));
+   if(e.f==='tanh')return f('log',f('cosh',X()));
    if(e.f==='sinh')return f('cosh',X());
    if(e.f==='cosh')return f('sinh',X());
  }
@@ -143,16 +223,66 @@ export function display(e,wrap=false){
   case 'a':return `${wrap?'(' : ''}${e.v.map(v=>display(v)).join(' + ').replace(/\+ -/g,'− ')}${wrap?')':''}`;
   case 'm':return e.v.map((v,i)=>display(v,i>0)).join('·');
   case 'p':return `${display(e.b,true)}^${e.e}`;
-  case 'f':return e.f==='abs'?`|${display(e.arg)}|`:`${e.f==='logabs'?'ln|·|':e.f}(${display(e.arg)})`;
+  case 'f':{
+   if(e.f==='sqrt')return `√(${display(e.arg)})`;
+   if(e.f==='logabs')return `ln|${display(e.arg)}|`;
+   if(e.f==='abs')return `|${display(e.arg)}|`;
+   const names={asin:'arcsin',acos:'arccos',atan:'arctan'};
+   return `${names[e.f]||e.f}(${display(e.arg)})`;
+  }
   default:return pretty(e,wrap);
  }
 }
-function specialLimit(e,point,side){
- const l=limit(e.arg,point,side);
- if(l.type==='unknown'||l.type==='nonexistent')return l;
- if(l.type==='symbolic')return unknown;
+// A certificate-based limit evaluator. An unknown result is NEVER treated as a
+// successful limit-card action: zero/infinity/nonexistence affect the winner.
+const isFinite = z=>z?.type==='finite';
+const isInf = z=>z?.type==='infinity';
+const isZero = z=>isFinite(z)&&close(z.v,0);
+const isKnown = z=>['finite','infinity','symbolic'].includes(z?.type);
+const isBad = z=>z?.type==='nonexistent';
+function trigOuter(name,arg,point,side,depth){
+ const lim=limitRec(arg,point,side,depth+1);
+ if(isBad(lim))return nonexistent;
+ if(isInf(lim)){
+  if(['sin','cos','tan','cot','sec','csc'].includes(name))return nonexistent;
+  return unknown;
+ }
+ if(isFinite(lim)){
+  try { const v=f(name,n(lim.v));return v.t==='n'?finite(v.v):symbolic(v); }
+  catch {return unknown;}
+ }
+ return unknown;
+}
+function specialLimit(e,point,side,depth){
  const name=e.f;
- if(l.type==='infinity'){
+ if(['sin','cos','tan','cot','sec','csc','exp','log','logabs','sqrt'].includes(name)){
+  const l=limitRec(e.arg,point,side,depth+1);
+  if(isBad(l))return nonexistent;
+  if(isInf(l)){
+   if(['sin','cos','tan','cot','sec','csc'].includes(name))return nonexistent;
+   if(name==='exp')return l.sign>0?P:finite(0);
+   if(name==='log'||name==='logabs')return P;
+   if(name==='sqrt')return l.sign>0?P:nonexistent;
+  }
+  if(isFinite(l)){
+   const v=l.v;
+   if(close(v,0)){
+    if(name==='logabs')return M;
+    if(name==='log')return point==='zero'&&side==='plus'?M:point==='zero'&&side==='minus'?nonexistent:unknown;
+    if(name==='cot'||name==='csc'){
+     const sign=signNear(e.arg,point,side);
+     return sign===1?P:sign===-1?M:nonexistent;
+    }
+   }
+   try {const result=f(name,n(v));return result.t==='n'?finite(result.v):symbolic(result);}catch{return unknown;}
+  }
+  return unknown;
+ }
+ const l=limitRec(e.arg,point,side,depth+1);
+ if(isBad(l))return nonexistent;
+ if(!isKnown(l))return unknown;
+ if(l.type==='symbolic')return unknown;
+ if(isInf(l)){
   const sign=l.sign;
   switch(name){
    case 'Li':return sign>0?P:nonexistent;
@@ -167,19 +297,18 @@ function specialLimit(e,point,side){
    case 'tanh':return finite(sign);
    case 'atan':return finite(sign*Math.PI/2);
    case 'abs':return P;
-   case 'sin':case 'cos':return nonexistent;
   }
  }
- if(l.type==='finite'){
+ if(isFinite(l)){
   const v=l.v;
   if(close(v,0)){
-    if(name==='Ei'||name==='Ci'||name==='Chi'||name==='logabs')return M;
-    if(name==='Li'||name==='log'||name==='sqrt')return point==='zero'&&side!=='plus'?nonexistent:name==='sqrt'?finite(0):name==='Li'?finite(0):M;
-    if(['Si','Shi','erf','erfi','FresnelS','FresnelC'].includes(name))return finite(0);
+   if(['Ei','Ci','Chi','logabs'].includes(name))return M;
+   if(name==='Li')return point==='zero'&&side==='plus'?finite(0):unknown;
+   if(['Si','Shi','erf','erfi','FresnelS','FresnelC'].includes(name))return finite(0);
   }
   if(name==='Li'&&close(v,1))return M;
-  if(name==='Ci'&&v<0 || name==='Li'&&v<0)return nonexistent;
-  try {const v2=f(name,n(v));return v2.t==='n'?finite(v2.v):symbolic(v2);}catch{return nonexistent;}
+  if((name==='Ci'&&v<0)||(name==='Li'&&v<0))return nonexistent;
+  try {const v2=f(name,n(v));return v2.t==='n'?finite(v2.v):symbolic(v2);}catch{return unknown;}
  }
  return unknown;
 }
@@ -192,59 +321,218 @@ function ratioParts(expr){
  }
  return denominator.length?{num:mul(...numerator),den:mul(...denominator)}:null;
 }
-function visiblyBounded(expr){
- if(expr.t==='n')return true;
- if(expr.t==='f'&&['sin','cos','tanh','erf'].includes(expr.f))return true;
- if(expr.t==='a')return expr.v.every(visiblyBounded);
- if(expr.t==='m')return expr.v.every(visiblyBounded);
+function bounded(e){
+ if(e.t==='n')return true;
+ if(e.t==='f'&&['sin','cos','tanh','erf'].includes(e.f))return true;
+ if(e.t==='a'||e.t==='m')return e.v.every(bounded);
+ if(e.t==='p'&&e.e>=0&&Number.isInteger(e.e))return bounded(e.b);
  return false;
 }
-function commonRatioLimit(expr,point,side){
- let current=expr;
- for(let depth=0;depth<4;depth++){
+// Known near-zero signs for x, x^odd/even, sin(x), tan(x) and products.
+// null means sign not established; it must not be guessed numerically.
+function signNear(e,point,side){
+ if(point!=='zero'||side==='two')return null;
+ switch(e.t){
+  case 'n':return Math.sign(e.v);
+  case 'x':return side==='plus'?1:-1;
+  case 'f':return ['sin','tan'].includes(e.f)?signNear(e.arg,point,side):null;
+  case 'p':{
+   const s=signNear(e.b,point,side);
+   if(s===null)return null;
+   return Number.isInteger(e.e)&&e.e%2===0?1:s;
+  }
+  case 'm':{
+   let sign=1;for(const q of e.v){const s=signNear(q,point,side);if(s===null)return null;sign*=s;}return sign;
+  }
+ }
+ return null;
+}
+function productLimit(e,point,side,depth){
+ const factors=e.t==='m'?e.v:[e];
+ const vals=factors.map(v=>limitRec(v,point,side,depth+1));
+ if(vals.every(isFinite))return finite(vals.reduce((r,v)=>r*v.v,1));
+ // The product of one factor tending to zero and bounded remaining factors is zero.
+ if(vals.some(isZero) && factors.every((v,i)=>isZero(vals[i])||isFinite(vals[i])||bounded(v)))return finite(0);
+ if(vals.some(isBad)||vals.some(v=>v.type==='unknown'))return unknown;
+ const infinities=vals.filter(isInf);
+ if(infinities.length && vals.some(isZero))return unknown;
+ if(infinities.length && vals.every(v=>isFinite(v)||isInf(v))){
+  let sign=1;
+  for(const v of vals)sign*=isInf(v)?v.sign:Math.sign(v.v);
+  return sign>0?P:M;
+ }
+ if(vals.every(isKnown)){
+  const nodes=vals.map(v=>isFinite(v)?n(v.v):v.expr);
+  return symbolic(mul(...nodes));
+ }
+ return unknown;
+}
+function sumLimit(e,point,side,depth){
+ const terms=e.t==='a'?e.v:[e];
+ const vals=terms.map(v=>limitRec(v,point,side,depth+1));
+ if(vals.every(isFinite))return finite(vals.reduce((r,v)=>r+v.v,0));
+ const inf=vals.filter(isInf);
+ if(inf.length && inf.every(v=>v.sign===inf[0].sign) && terms.every((e,i)=>isKnown(vals[i])||bounded(e))){
+  return inf[0].sign>0?P:M;
+ }
+ if(vals.some(isBad)||vals.some(v=>v.type==='unknown'))return unknown;
+ if(inf.length)return unknown;
+ if(vals.every(isKnown))return symbolic(add(...vals.map(v=>isFinite(v)?n(v.v):v.expr)));
+ return unknown;
+}
+function ratioLimit(e,point,side,depth){
+ let current=e;
+ for(let step=0;step<5;step++){
   const parts=ratioParts(current);
   if(!parts)return unknown;
-  const a=base.limit(parts.num,point,side),b=base.limit(parts.den,point,side);
-  if(b.type==='infinity'&&visiblyBounded(parts.num))return finite(0);
-  const indeterminate=(a.type==='finite'&&close(a.v,0)&&b.type==='finite'&&close(b.v,0)) ||
-    (a.type==='infinity'&&b.type==='infinity');
-  if(!indeterminate)return unknown;
-  try{
+  const a=limitRec(parts.num,point,side,depth+1);
+  const b=limitRec(parts.den,point,side,depth+1);
+  if(isInf(b)&&bounded(parts.num))return finite(0);
+  if(isFinite(a)&&isInf(b))return finite(0);
+  // numerator finite nonzero; denominator tends to 0 with a proved sign
+  if(isFinite(a)&&!close(a.v,0)&&isZero(b)){
+   const sign=signNear(parts.den,point,side);
+   if(sign)return a.v*sign>0?P:M;
+   if(point==='zero'&&side==='two')return nonexistent;
+  }
+  if(!((isZero(a)&&isZero(b))||(isInf(a)&&isInf(b))))return unknown;
+  try {
    current=div(derivative(parts.num),derivative(parts.den));
-   const value=base.limit(current,point,side);
-   if(value.type==='finite'||value.type==='infinity')return value;
-  }catch {return unknown;}
+   const candidate=limitRec(current,point,side,depth+1);
+   if(isFinite(candidate)||isInf(candidate))return candidate;
+  } catch {return unknown;}
+ }
+ return unknown;
+}
+function limitRec(e,point,side,depth){
+ if(depth>18)return unknown;
+ if(e.t==='L')return unknown; // never bless a previously unproved limit
+ if(e.t==='I'||e.t==='D')return unknown;
+ if(e.t==='n')return finite(e.v);
+ if(e.t==='x')return point==='plus'?P:point==='minus'?M:finite(0);
+ if(e.t==='f')return specialLimit(e,point,side,depth);
+ if(e.t==='a')return sumLimit(e,point,side,depth);
+ if(e.t==='m'){
+  const product=productLimit(e,point,side,depth);
+  if(isKnown(product))return product;
+  const ratio=ratioParts(e);
+  if(ratio){const answer=ratioLimit(e,point,side,depth);if(isKnown(answer)||isBad(answer))return answer;}
+  return product;
+ }
+ if(e.t==='p'){
+  const inner=limitRec(e.b,point,side,depth+1);
+  if(isFinite(inner)){
+   if(close(inner.v,0)&&e.e<0){
+    const s=signNear(e.b,point,side);
+    if(s!==null){const sign=Number.isInteger(e.e)&&e.e%2===0?1:s;return sign>0?P:M;}
+    if(point==='zero'&&side==='two'&&e.b.t==='x'&&Number.isInteger(e.e))
+      return e.e%2===0?P:nonexistent;
+    return unknown;
+   }
+   try{const result=pow(n(inner.v),e.e);return result.t==='n'?finite(result.v):unknown;}
+   catch{return unknown;}
+  }
+  if(isInf(inner)){
+   if(e.e<0)return finite(0);
+   if(Number.isInteger(e.e))return inner.sign<0&&e.e%2!==0?M:P;
+   return inner.sign>0?P:unknown;
+  }
+  if(isBad(inner)){
+    // Even powers of a genuinely oscillating sinusoid are still nonconvergent.
+    if(e.b?.t==='f'&&['sin','cos'].includes(e.b.f)&&Number.isInteger(e.e)&&e.e>0)return nonexistent;
+    if(e.b?.t==='f'&&['sin','cos'].includes(e.b.f)&&Number.isInteger(e.e)&&e.e<0)return nonexistent;
+    return unknown;
+  }
+  return unknown;
+ }
+ return unknown;
+}
+function reciprocalX(e){
+ switch(e.t){
+  case 'n':return e;
+  case 'x':return pow(X(),-1);
+  case 'a':return add(...e.v.map(reciprocalX));
+  case 'm':return mul(...e.v.map(reciprocalX));
+  case 'p':return e.b.t==='x'&&Number.isInteger(e.e)?pow(X(),-e.e):pow(reciprocalX(e.b),e.e);
+  case 'f':return f(e.f,reciprocalX(e.arg));
+  default:return e;
+ }
+}
+function algebraicGrowth(e){
+ if(e.t==='n')return true;
+ if(e.t==='x')return true;
+ if(e.t==='p'&&e.b.t==='x')return true;
+ if(e.t==='f'&&['sin','cos','tanh','erf'].includes(e.f))return true;
+ if(e.t==='a'||e.t==='m')return e.v.every(algebraicGrowth);
+ return false;
+}
+function dominanceAtInfinity(e,point){
+ if(e.t!=='m')return unknown;
+ // An exponentially decreasing factor defeats every polynomial factor.
+ for(let i=0;i<e.v.length;i++){
+  const v=e.v[i];
+  if(v?.t!=='f'||v.f!=='exp')continue;
+  const l=limitRec(v.arg,point,'two',0);
+  if(isInf(l)&&l.sign<0&&e.v.every((q,j)=>i===j||algebraicGrowth(q)))return finite(0);
+ }
+ return unknown;
+}
+function trigOscillatesWithoutDamping(e,point,side='two'){
+ if(e.t!=='m')return unknown;
+ for(const direction of point==='zero'&&side==='two'?['plus','minus']:[side]){
+  const factors=e.v;
+  const trig=factors.filter(q=>q.t==='f'&&['sin','cos','tan','cot','sec','csc'].includes(q.f)
+    &&isInf(limitRec(q.arg,point,direction,0)));
+  if(!trig.length)continue;
+  const others=factors.filter(q=>!trig.includes(q));
+  if(!others.length)return nonexistent;
+  if(others.every(algebraicGrowth)&&others.every(q=>{
+   const v=limitRec(q,point,direction,0);
+   return isInf(v)||(isFinite(v)&&!close(v.v,0));
+  }))return nonexistent;
  }
  return unknown;
 }
 export function limit(e,point='plus',side='two'){
- // Delegate ordinary algebra to the original certified rules (including L'Hôpital).
- if(!independent(e)){
-  const result=base.limit(e,point,side);
-  if(result.type!=='undefined')return result;
-  if(e.t==='m'){const ratio=commonRatioLimit(e,point,side);if(ratio.type!=='unknown')return ratio;}
-  if(e.t==='f'&&['sin','cos'].includes(e.f)&&point!=='zero')return nonexistent;
-  if(e.t==='p'&&e.b.t==='x'&&e.e<0&&point==='zero'&&side==='two'&&Math.abs(e.e)%2===1)return nonexistent;
-  return unknown;
- }
- if(e.t==='L')return symbolic(e);
- if(e.t==='I'||e.t==='D')return unknown;
- if(e.t==='f')return specialLimit(e,point,side);
- if(e.t==='a'||e.t==='m'){
-   const parts=e.v.map(v=>limit(v,point,side));
-   if(parts.some(v=>v.type==='unknown'||v.type==='nonexistent'))return parts.find(v=>v.type==='nonexistent')||unknown;
-   if(parts.some(v=>v.type==='infinity'))return unknown; // Avoid false ∞-∞ / 0·∞.
-   const nodes=parts.map(v=>v.type==='finite'?n(v.v):v.expr);
-   const result=e.t==='a'?add(...nodes):mul(...nodes);
-   return result.t==='n'?finite(result.v):symbolic(result);
- }
- if(e.t==='p'){
-   const inner=limit(e.b,point,side);
-   if(inner.type==='finite'){
-     try {const result=pow(n(inner.v),e.e);return result.t==='n'?finite(result.v):symbolic(result);}catch{return unknown;}
+ const clean=simplify(e);
+ const first=limitRec(clean,point,side,0);
+ if(isKnown(first)||isBad(first))return first;
+ if(point==='plus'||point==='minus'){
+  const dominated=dominanceAtInfinity(clean,point);
+  if(isKnown(dominated))return dominated;
+  const oscillates=trigOscillatesWithoutDamping(clean,point);
+  if(isBad(oscillates))return oscillates;
+  // x = ±∞ is the corresponding one-sided t=1/x -> 0 limit.
+  // This makes x*sin(1/x), x²*(1-cos(1/x)), etc. tractable.
+  try{
+   const transformed=reciprocalX(clean);
+   if(base.sig(transformed)!==base.sig(clean)){
+    const alternative=limitRec(transformed,'zero',point==='plus'?'plus':'minus',0);
+    if(isKnown(alternative)||isBad(alternative))return alternative;
    }
-   if(inner.type==='symbolic')return symbolic(pow(inner.expr,e.e));
-   return unknown;
+  }catch{}
  }
+ if(point==='zero'){
+  const oscillates=trigOscillatesWithoutDamping(clean,point,side);
+  if(isBad(oscillates))return oscillates;
+ }
+ return unknown;
+}
+// For limsup / liminf we only evaluate certified, exactly known harmonic forms.
+export function oscillatoryLimit(e,kind='sup'){
+ const normal=simplify(e);
+ const simple=base.oscillatoryLimit(normal,kind);
+ if(simple.type==='finite')return simple;
+ // When an ordinary limit exists, upper and lower limits agree with it.
+ const ordinary=limit(normal,'plus');
+ if(isFinite(ordinary)||isInf(ordinary))return ordinary;
+ if(normal.t==='f'&&['tan','cot','sec','csc'].includes(normal.f)&&isInf(limitRec(normal.arg,'plus','two',0)))
+   return kind==='sup'?P:M;
+ if(normal.t==='p'&&normal.e===-2&&normal.b?.t==='f'&&['sin','cos'].includes(normal.b.f)
+   &&isInf(limitRec(normal.b.arg,'plus','two',0)))
+   return kind==='sup'?P:finite(1);
+ if(normal.t==='p'&&Number.isInteger(normal.e)&&normal.e>0&&normal.b?.t==='f'&&['sin','cos'].includes(normal.b.f)
+   &&isInf(limitRec(normal.b.arg,'plus','two',0)))
+   return kind==='sup'?finite(1):finite(normal.e%2===0?0:-1);
  return unknown;
 }
