@@ -1,9 +1,9 @@
-import {displayNumber} from './number-format.js?v=0.9';
+import {displayNumber} from './number-format.js?v=0.10';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.9';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.9';
-export * from './symbolic.js?v=0.9';
+import * as base from './symbolic.js?v=0.10';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.10';
+export * from './symbolic.js?v=0.10';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -105,7 +105,7 @@ const symbolic = expr => ({type:'symbolic',expr});
 const close=(a,b)=>Math.abs(a-b)<1e-8;
 export const antiderivative=(arg,order=1)=>({t:'I',arg,order});
 export const formalLimit=(arg,point='plus',side='two',kind='lim')=>({t:'L',arg,point,side,kind});
-function independent(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&independent(e.arg)||e.b&&independent(e.b)||Array.isArray(e.v)&&e.v.some(independent)||e.t==='f'&&['Li','Ei','Si','Ci','erf','erfi','FresnelS','FresnelC','Shi','Chi','abs','tan','cot','sec','csc','atan','tanh','sinh','cosh'].includes(e.f));}
+function independent(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&independent(e.arg)||e.b&&independent(e.b)||Array.isArray(e.v)&&e.v.some(independent)||e.t==='f'&&['Li','Ei','Si','Ci','erf','erfi','FresnelS','FresnelC','Shi','Chi','abs','sign','tan','cot','sec','csc','atan','tanh','sinh','cosh'].includes(e.f));}
 function derivativeFn(e){
  const a=e.arg, da=derivative(a), df=v=>mul(v,da);
  const elliptic=ellipticInfo(e.f);
@@ -119,7 +119,9 @@ function derivativeFn(e){
   case 'cos':return df(neg(f('sin',a)));
   case 'log':case 'logabs':return div(da,a);
   case 'sqrt':return div(da,mul(n(2),f('sqrt',a)));
-  case 'abs':return df(div(a,f('abs',a)));
+  case 'abs':return df(f('sign',a));
+  // Ordinary derivative away from isolated jumps (the game ignores isolated holes).
+  case 'sign':return n(0);
   case 'asin':return div(da,f('sqrt',add(n(1),neg(pow(a,2)))));
   case 'acos':return neg(div(da,f('sqrt',add(n(1),neg(pow(a,2))))));
   case 'atan':return div(da,add(n(1),pow(a,2)));
@@ -625,6 +627,11 @@ function affineTrigEllipticPrimitive(e){
  return mul(n(2*a**p/lin.a),f(name,trig.arg));
 }
 function integralInner(e){
+ if(e.t==='f'&&['sign','abs'].includes(e.f)){
+  const a=linearArgument(e.arg);
+  if(a)return e.f==='sign'?mul(n(1/a.a),f('abs',e.arg)):
+    mul(n(.5/a.a),e.arg,f('abs',e.arg));
+ }
  const elliptic=affineTrigEllipticPrimitive(e);if(elliptic)return elliptic;
  const extendedTrig=trigExtendedPrimitive(e);if(extendedTrig)return extendedTrig;
  const powers=trigonometricPowerPrimitive(e);if(powers)return powers;
@@ -805,6 +812,7 @@ export function display(e,wrap=false){
    if(e.f==='sqrt')return `√(${display(e.arg)})`;
    if(e.f==='logabs')return `ln|${display(e.arg)}|`;
    if(e.f==='abs')return `|${display(e.arg)}|`;
+   if(e.f==='sign')return `sgn(${display(e.arg)})`;
    const names={asin:'arcsin',acos:'arccos',atan:'arctan'};
    return `${names[e.f]||e.f}(${display(e.arg)})`;
   }
@@ -833,6 +841,19 @@ function trigOuter(name,arg,point,side,depth){
 }
 function specialLimit(e,point,side,depth){
  const name=e.f;
+ if(name==='sign'){
+  const l=limitRec(e.arg,point,side,depth+1);
+  if(isInf(l))return finite(l.sign);
+  if(isFinite(l)&&!close(l.v,0))return finite(Math.sign(l.v));
+  if(isFinite(l)&&close(l.v,0)){
+   if(point==='zero'&&side==='two'){
+    const a=signNear(e.arg,point,'plus'),b=signNear(e.arg,point,'minus');
+    if(a!==null&&b!==null)return a===b?finite(a):nonexistent;
+   }
+   const sign=signNear(e.arg,point,side);if(sign!==null)return finite(sign);
+  }
+  return unknown;
+ }
  const ell=ellipticInfo(name);
  if(ell){
   const l=limitRec(e.arg,point,side,depth+1);
@@ -912,7 +933,7 @@ function ratioParts(expr){
 }
 function bounded(e){
  if(e.t==='n')return true;
- if(e.t==='f'&&['sin','cos','tanh','erf'].includes(e.f))return true;
+ if(e.t==='f'&&['sin','cos','tanh','erf','sign'].includes(e.f))return true;
  if(e.t==='a'||e.t==='m')return e.v.every(bounded);
  if(e.t==='p'&&e.e>=0&&Number.isInteger(e.e))return bounded(e.b);
  return false;
@@ -924,7 +945,7 @@ function signNear(e,point,side){
  switch(e.t){
   case 'n':return Math.sign(e.v);
   case 'x':return side==='plus'?1:-1;
-  case 'f':return ['sin','tan'].includes(e.f)?signNear(e.arg,point,side):null;
+  case 'f':{const z=signNear(e.arg,point,side);return ['sin','tan','sign'].includes(e.f)?z:e.f==='abs'&&z!==null?Math.abs(z):null;}
   case 'p':{
    const s=signNear(e.b,point,side);
    if(s===null)return null;
@@ -1013,7 +1034,14 @@ function limitRec(e,point,side,depth){
   if(isFinite(inner)){
    if(close(inner.v,0)&&e.e<0){
     const s=signNear(e.b,point,side);
-    if(s!==null){const sign=Number.isInteger(e.e)&&e.e%2===0?1:s;return sign>0?P:M;}
+    if(s!==null&&s!==0){
+     if(!Number.isInteger(e.e)&&s<0)return unknown;
+     const sign=Number.isInteger(e.e)&&e.e%2===0?1:s;return sign>0?P:M;
+    }
+    if(point==='zero'&&side==='two'&&e.b.t==='f'&&e.b.f==='abs'){
+     const left=signNear(e.b.arg,point,'minus'),right=signNear(e.b.arg,point,'plus');
+     if(left&&right)return P;
+    }
     if(point==='zero'&&side==='two'&&e.b.t==='x'&&Number.isInteger(e.e))
       return e.e%2===0?P:nonexistent;
     return unknown;

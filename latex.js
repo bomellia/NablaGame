@@ -1,5 +1,5 @@
-import {latexNumber} from './number-format.js?v=0.9';
-import {orderedTerms} from './normalization.js?v=0.9';
+import {latexNumber} from './number-format.js?v=0.10';
+import {orderedTerms} from './normalization.js?v=0.10';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -12,7 +12,7 @@ const fnNames={
   log:'\\ln',asin:'\\arcsin',acos:'\\arccos',atan:'\\arctan',
   Li:'\\operatorname{Li}',Ei:'\\operatorname{Ei}',Si:'\\operatorname{Si}',Ci:'\\operatorname{Ci}',
   Shi:'\\operatorname{Shi}',Chi:'\\operatorname{Chi}',erf:'\\operatorname{erf}',erfi:'\\operatorname{erfi}',
-  FresnelS:'\\operatorname{S}',FresnelC:'\\operatorname{C}'
+  FresnelS:'\\operatorname{S}',FresnelC:'\\operatorname{C}',sign:'\\operatorname{sgn}'
 };
 const atomLike=e=>['n','x','f'].includes(e?.t);
 const numberLatex = latexNumber;

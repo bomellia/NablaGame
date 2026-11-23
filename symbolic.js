@@ -35,6 +35,29 @@ export function mul(...items) {
   coeff=tidy(coeff);
   if(!Number.isFinite(coeff))throw new Unsupported('数値が大きすぎます');
   if(near(coeff))return n(0);
+  // Cancel powers of u against powers of |u| without losing its sign.
+  for(const [key,item] of [...factors]){
+    if(item.b.t!=='f'||item.b.f!=='abs'||!Number.isInteger(item.exp))continue;
+    const u=item.b.arg, k=sig(u), other=factors.get(k);
+    if(!other||!Number.isInteger(other.exp)||other.exp*item.exp>=0)continue;
+    factors.delete(key);factors.delete(k);
+    const total=tidy(other.exp+item.exp);
+    if(Math.abs(other.exp)%2===1){const sign=fn('sign',u), sk=sig(sign);factors.set(sk,{b:sign,exp:tidy((factors.get(sk)?.exp||0)+1)});}
+    if(!near(total))factors.set(key,{b:item.b,exp:total});
+  }
+  // sgn(u) is its own reciprocal on the punctured domain.
+  for(const [key,item] of [...factors]){
+    if(item.b.t!=='f'||item.b.f!=='sign'||!Number.isInteger(item.exp))continue;
+    factors.delete(key);
+    if(item.exp%2===0)continue;
+    const u=item.b.arg, abs=fn('abs',u), ku=sig(u), ka=sig(abs);
+    const plain=factors.get(ku), absolute=factors.get(ka);
+    if(ku!==ka&&plain&&Number.isInteger(plain.exp)&&Math.abs(plain.exp)%2===1&&!absolute){
+      factors.delete(ku);factors.set(ka,{b:abs,exp:plain.exp});
+    }else if(ku!==ka&&absolute&&Number.isInteger(absolute.exp)&&Math.abs(absolute.exp)%2===1&&!plain){
+      factors.delete(ka);factors.set(ku,{b:u,exp:absolute.exp});
+    }else factors.set(key,{b:item.b,exp:1});
+  }
   const core=[];
   for(const {b,exp} of factors.values())if(!near(exp))core.push(near(exp,1)?b:pow(b,exp));
   core.sort(keyOrder);
@@ -63,6 +86,12 @@ export function add(...items) {
   out.sort(keyOrder);
   return out.length===0?n(0):out.length===1?out[0]:{t:'a',v:out};
 }
+// Prove only simple structural nonnegativity, never from numeric samples.
+function nonnegative(e){
+  return e.t==='n'?e.v>=0:e.t==='f'?['abs','sqrt','exp'].includes(e.f):
+    e.t==='p'?Number.isInteger(e.e)&&e.e%2===0||nonnegative(e.b):
+    e.t==='m'?e.v.every(nonnegative):e.t==='a'?e.v.every(nonnegative):false;
+}
 export function pow(base,exp) {
   if(!Number.isFinite(exp)||Math.abs(exp)>16) throw new Unsupported('指数の範囲外です');
   if(near(exp,0)) return n(1);
@@ -74,10 +103,19 @@ export function pow(base,exp) {
   }
   // The game treats removable domain gaps as cancelled. Converting sqrt(u)^n
   // into u^(n/2) exposes inverse square roots to the power-rule integrator.
-  if(base.t==='f' && base.f==='sqrt' && Number.isInteger(exp)) return pow(base.arg,exp/2);
+  if(base.t==='f' && base.f==='sqrt') return pow(base.arg,exp/2);
+  if(base.t==='f' && base.f==='abs' && Number.isInteger(exp) && exp%2===0) return pow(base.arg,exp);
+  if(base.t==='f' && base.f==='sign' && Number.isInteger(exp)) return exp%2===0?n(1):base;
   // exp(u) never vanishes; exp(u)^n can always be canonicalized.
-  if(base.t==='f' && base.f==='exp' && Number.isInteger(exp)) return fn('exp',mul(n(exp),base.arg));
-  if(base.t==='p' && Number.isInteger(base.e) && Number.isInteger(exp)) return pow(base.b,base.e*exp);
+  if(base.t==='f' && base.f==='exp') return fn('exp',mul(n(exp),base.arg));
+  if(base.t==='p'){
+    const total=tidy(base.e*exp);
+    if(Number.isInteger(exp)||nonnegative(base.b)||!Number.isInteger(base.e))return pow(base.b,total);
+    if(Number.isInteger(base.e)&&base.e%2===0)return pow(fn('abs',base.b),total);
+    // Odd integer powers preserve the sign; on the common real domain the
+    // half-power can be combined without introducing a different branch.
+    if(Number.isInteger(base.e)&&Number.isInteger(exp*2))return pow(base.b,total);
+  }
   // Safe for nonnegative integral powers; e.g. (-x)^2 = x^2.
   if(base.t==='m' && Number.isInteger(exp) && Math.abs(exp)>=1 && Math.abs(exp)<=8) return mul(...base.v.map(factor=>pow(factor,exp)));
   return {t:'p',b:base,e:exp};
@@ -97,6 +135,28 @@ export function fn(f,arg) {
     if(f==='sqrt') {if(a<0) throw new Unsupported('平方根の実数定義域が空です');return n(Math.sqrt(a));}
     if(f==='abs') return n(Math.abs(a));
     if(f==='asin'||f==='acos') {if(a< -1||a>1) throw new Unsupported('逆三角関数の定義域外です');return n(f==='asin'?Math.asin(a):Math.acos(a));}
+  }
+  if(f==='sqrt'){
+    if(arg.t==='p')return pow(arg,.5);
+    if(arg.t==='f'&&['sqrt','exp'].includes(arg.f))return pow(arg,.5);
+    if(arg.t==='m'){
+      const roots=[], rest=[];
+      for(const factor of arg.v){if(nonnegative(factor))roots.push(pow(factor,.5));else rest.push(factor);}
+      if(roots.length)return mul(...roots,...(rest.length?[fn('sqrt',mul(...rest))]:[]));
+    }
+  }
+  if(f==='abs'){
+    if(nonnegative(arg))return arg;
+    if(arg.t==='p'&&Number.isInteger(arg.e))return pow(fn('abs',arg.b),arg.e);
+    if(arg.t==='m')return mul(...arg.v.map(v=>fn('abs',v)));
+    if(arg.t==='f'&&arg.f==='sign')return n(1);
+  }
+  if(f==='sign'){
+    if(arg.t==='n')return n(Math.sign(arg.v));
+    if(arg.t==='f'&&arg.f==='sign')return arg;
+    if(arg.t==='m'&&arg.v[0]?.t==='n')return mul(n(Math.sign(arg.v[0].v)),fn('sign',mul(...arg.v.slice(1))));
+    if(arg.t==='p'&&Number.isInteger(arg.e))return arg.e%2===0?n(1):fn('sign',arg.b);
+    if(arg.t==='f'&&arg.f==='exp')return n(1);
   }
   if(f==='log' && arg.t==='f'&&arg.f==='exp') return arg.arg;
   // exp(log(x)) must NOT simplify to x without preserving x>0 domain.

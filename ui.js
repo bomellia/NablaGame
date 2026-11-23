@@ -1,6 +1,6 @@
-import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.9';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.9';
-import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.9';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.10';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.10';
+import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.10';
 const $=id=>document.getElementById(id);
 const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
 const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
@@ -132,7 +132,7 @@ function runCom(){
     save();render();
   };
   try{
-    worker=new Worker('./com-worker.js?v=0.9',{type:'module'});
+    worker=new Worker('./com-worker.js?v=0.10',{type:'module'});
     comWorker=worker;
     watchdog=setTimeout(()=>finalize(null),3000);
     worker.onmessage=event=>finalize(event.data?.move||null);
