@@ -71,12 +71,12 @@ test('integration card produces Li basis in the game',()=>{
   const next=applyMove(s,{cardIndex:0,owner:1,target:0,C:0});
   assert.match(display(next.boards[1][0]),/Li\(x\)/);
 });
-test('limits retained rather than blocked in the game when unknown',()=>{
+test('unknown limits are blocked rather than retained as game results',()=>{
   const s=newGame();s.turn=0;s.turns=2;s.hands[0]=['LIM_PLUS'];
   s.boards[1]=[antiderivative(fn('sin',fn('exp',a)))];
   const result=preview(s,{cardIndex:0,owner:1,target:0});
-  assert.equal(result.ok,true,result.reason);
-  assert.match(display(result.state.boards[1][0]),/lim\[x→\+∞\]/);
+  assert.equal(result.ok,false);
+  assert.match(result.reason,/極限/);
 });
 test('players can exchange any selected card even if there are legal moves',()=>{
   const s=newGame();s.hands[0]=['DIFF','SIN'];
