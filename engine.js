@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.7';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.8';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.7';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.8';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -19,12 +19,18 @@ export function initialBoard(random=Math.random){
 
 const MAX_EXPRESSION_SIZE=175;
 const MAX_DISPLAY_LENGTH=2000;
-const SOFT_SIZE=110, SOFT_LENGTH=260;
+/** Never turn a mathematically computable derivative into an inert D symbol.
+ * A very large expression may still be rejected by the normal game-size guard. */
 function safeDerivative(e){
-  try {const out=derivative(e);if(expressionSize(out)<SOFT_SIZE&&display(out).length<SOFT_LENGTH)return out;}
-  catch(error){if(!(error instanceof Unsupported||error instanceof RangeError))throw error;}
-  return e.t==='D'?{t:'D',arg:e.arg,order:(e.order||1)+1}:{t:'D',arg:e,order:1};
+ const value=simplify(derivative(simplify(e)));
+ if(containsUnevaluatedDerivative(value))throw new Unsupported('微分結果を確定できません');
+ return value;
 }
+function containsUnevaluatedDerivative(e){
+ return !!e && (e.t==='D'||(e.arg&&containsUnevaluatedDerivative(e.arg))||
+   (e.b&&containsUnevaluatedDerivative(e.b))||(Array.isArray(e.v)&&e.v.some(containsUnevaluatedDerivative)));
+}
+const SOFT_SIZE=110, SOFT_LENGTH=260;
 function safeIntegral(e,C){
  // Unsupported integrals are illegal, never formal placeholder bases.
  const out=integrate(simplify(e),C);
@@ -34,7 +40,7 @@ function safeIntegral(e,C){
 }
 /** A legacy formal limit was never proven. It must not take part in scoring. */
 function hasLegacyLimit(e){
-  return !!e && (e.t==='L' || (e.arg && hasLegacyLimit(e.arg)) ||
+  return !!e && ((e.t==='L'||e.t==='I') || (e.arg && hasLegacyLimit(e.arg)) ||
     (e.b && hasLegacyLimit(e.b)) || (Array.isArray(e.v) && e.v.some(hasLegacyLimit)));
 }
 /** Restore saved games made by older, less aggressive formula simplifiers. */
@@ -47,13 +53,17 @@ export function normalizeGame(game){
       // Re-evaluating a legacy unproved limit is unsafe: it may be oscillatory,
       // zero or divergent. Remove it until a future domain-aware migration exists.
       if(hasLegacyLimit(expr)){removed++;continue;}
-      try{accepted.push(simplify(expr));}catch{accepted.push(expr);}
+      try{accepted.push(simplify(expr));}
+      catch(error){
+        if(JSON.stringify(expr).includes('"t":"D"')){removed++;continue;}
+        accepted.push(expr);
+      }
     }
     return reduceBasis(accepted).kept;
   });
   if(removed){
     state.log=Array.isArray(state.log)?state.log:[];
-    state.log.unshift(`旧版の未証明の極限式を${removed}個除外しました。勝敗判定には使用できません。`);
+    state.log.unshift(`旧版の未証明・未評価演算式を${removed}個除外しました。勝敗判定には使用できません。`);
     state.log=state.log.slice(0,16);
     if(state.boards.some(b=>b.length===0)){
       state.finished=true;
@@ -61,6 +71,7 @@ export function normalizeGame(game){
       state.winner=a===b?-1:a>b?0:1;
     }
   }
+  state.version=8;
   return state;
 }
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
@@ -68,7 +79,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   const hands=[[],[]];
   for(let i=0;i<7;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const opening=initialBoard(random);
-  return {version:7,boards:[copy(opening),copy(opening)],hands,deck,turn:startingPlayer,
+  return {version:8,boards:[copy(opening),copy(opening)],hands,deck,turn:startingPlayer,
     turns:0,finished:false,winner:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }

@@ -1,4 +1,5 @@
-import {orderedTerms} from './normalization.js?v=0.7';
+import {latexNumber} from './number-format.js?v=0.8';
+import {orderedTerms} from './normalization.js?v=0.8';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -14,10 +15,7 @@ const fnNames={
   FresnelS:'\\operatorname{S}',FresnelC:'\\operatorname{C}'
 };
 const atomLike=e=>['n','x','f'].includes(e?.t);
-function numberLatex(v){
- if(!Number.isFinite(v))return '\\text{invalid}';
- return String(v).replace('e-','\\times 10^{-').replace('e+','\\times 10^{').replace(/(\\times 10\^\{[^}]+)$/,'$1}');
-}
+const numberLatex = latexNumber;
 function sumTerms(terms){
  let result='';
  for(const term of terms){
@@ -58,6 +56,8 @@ export function toLatex(e){
   case 'm':return productLatex(e.v);
   case 'p':{
    if(e.e===1)return toLatex(e.b);
+   if(e.e===.5)return `\\sqrt{${toLatex(e.b)}}`;
+   if(e.e===-.5)return `\\frac{1}{\\sqrt{${toLatex(e.b)}}}`;
    if(e.e<0){
     const denominator=e.e===-1?toLatex(e.b):toLatex({t:'p',b:e.b,e:-e.e});
     return `\\frac{1}{${denominator}}`;

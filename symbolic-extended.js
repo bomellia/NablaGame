@@ -1,8 +1,9 @@
+import {displayNumber} from './number-format.js?v=0.8';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.7';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.7';
-export * from './symbolic.js?v=0.7';
+import * as base from './symbolic.js?v=0.8';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.8';
+export * from './symbolic.js?v=0.8';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -30,6 +31,11 @@ export function fn(name,arg){
   if(name==='cosh')return n(Math.cosh(v));
   if(name==='tanh')return n(Math.tanh(v));
   if(name==='atan')return n(Math.atan(v));
+ }
+ if(arg?.t==='m'&&arg.v[0]?.t==='n'&&arg.v[0].v<0&&['sin','cos','sinh','cosh'].includes(name)){
+  const positive=base.mul(n(-arg.v[0].v),...arg.v.slice(1));
+  const val=fn(name,positive);
+  return ['sin','sinh'].includes(name)?base.mul(n(-1),val):val;
  }
  if(arg?.t==='m'&&arg.v[0]?.t==='n'&&arg.v[0].v===-1&&['tan','cot','sec','csc'].includes(name)){
   const pos=base.mul(...arg.v.slice(1));
@@ -104,7 +110,7 @@ function derivativeFn(e){
   case 'cot':return neg(div(da,pow(f('sin',a),2)));
   case 'sec':return mul(f('sec',a),f('tan',a),da);
   case 'csc':return neg(mul(f('csc',a),f('cot',a),da));
-  default:return {t:'D',arg:e,order:1};
+  default:throw new base.Unsupported('未対応の関数を微分できません');
  }
 }
 export function derivative(e){
@@ -112,12 +118,16 @@ export function derivative(e){
   case 'n':return n(0);case 'x':return n(1);
   case 'L':return n(0); // A formal limit is considered a symbolic constant by the game rule.
   case 'I':return (e.order||1)===1?e.arg:antiderivative(e.arg,(e.order||1)-1);
-  case 'D':return {t:'D',arg:e.arg,order:(e.order||1)+1};
+  case 'D':{
+   let evaluated=e.arg;
+   for(let j=0;j<Math.min(16,(e.order||1)+1);j++)evaluated=derivative(evaluated);
+   return evaluated;
+  }
   case 'a':return add(...e.v.map(derivative));
   case 'm':return add(...e.v.map((part,i)=>mul(derivative(part),...e.v.filter((_,j)=>i!==j))));
   case 'p':return mul(n(e.e),pow(e.b,e.e-1),derivative(e.b));
   case 'f':return derivativeFn(e);
-  default:return {t:'D',arg:e,order:1};
+  default:throw new base.Unsupported('未知の式を微分できません');
  }
 }
 function slope(expr){const lm=base.linearForm(expr);if(!lm||[...lm.keys()].some(k=>k!=='1'&&k!=='x'))return null;return lm.get('x')||null;}
@@ -237,7 +247,7 @@ function elementaryPowerPrimitive(e){
   if(e.b.f==='tan')return add(f('tan',u),neg(u));
  }
  // (ax+b)^p via substitution, including 1/(ax+b).
- if(e.t==='p'&&Number.isInteger(e.e)&&e.e>=-8&&e.e<=8){
+ if(e.t==='p'&&Number.isFinite(e.e)&&e.e>=-8&&e.e<=8){
   const lin=linearArgument(e.b);if(lin){
    if(e.e===-1)return mul(n(1/lin.a),f('logabs',e.b));
    return mul(n(1/(lin.a*(e.e+1))),pow(e.b,e.e+1));
@@ -246,7 +256,258 @@ function elementaryPowerPrimitive(e){
  return null;
 }
 
+// Elementary primitives discovered by replaying game-like product/quotient states.
+// Restrict arguments to linear functions so chain factors are exact constants.
+function trigPowerFactor(e){
+ if(e?.t==='f'&&['sin','cos'].includes(e.f))return {name:e.f,u:e.arg,k:1};
+ if(e?.t==='p'&&Number.isInteger(e.e)&&e.e>=1&&e.e<=8&&e.b?.t==='f'&&['sin','cos'].includes(e.b.f))
+   return {name:e.b.f,u:e.b.arg,k:e.e};
+ return null;
+}
+function binomial(n,k){let v=1;for(let i=1;i<=k;i++)v=v*(n-i+1)/i;return Math.round(v);}
+function trigonometricSubstitutionPrimitive(u,m,k,slope){
+ // If one power is odd, substitute the other trigonometric function to
+ // avoid expansion into multiple-angle expressions.
+ const cosineOdd=k%2===1;
+ if(!cosineOdd&&m%2!==1)return null;
+ const t=cosineOdd?f('sin',u):f('cos',u);
+ const a=cosineOdd?m:k, times=(cosineOdd?k:m)-1;
+ let terms=[];
+ for(let j=0;j<=times/2;j++){
+  const sign=(j%2===0?1:-1)*(cosineOdd?1:-1);
+  const exp=a+2*j+1;
+  terms.push(mul(n(sign*binomial(times/2,j)/(slope*exp)),pow(t,exp)));
+ }
+ return add(...terms);
+}
+function trigonometricPowerPrimitive(expr){
+ const factors=expr.t==='m'?expr.v:[expr];
+ if(factors.length>2)return null;
+ const parts=factors.map(trigPowerFactor);
+ if(parts.some(z=>!z))return null;
+ const u=parts[0].u,lin=linearArgument(u);
+ if(!lin||parts.some(z=>base.sig(z.u)!==base.sig(u)))return null;
+ const m=parts.filter(z=>z.name==='sin').reduce((v,z)=>v+z.k,0);
+ const k=parts.filter(z=>z.name==='cos').reduce((v,z)=>v+z.k,0);
+ if(m+k>12||m+k===0)return null;
+ const substituted=trigonometricSubstitutionPrimitive(u,m,k,lin.a);
+ if(substituted)return simplify(substituted);
+ const result=[];const factor=2**(m+k)*lin.a;
+ // Euler's formula gives a finite Fourier expansion for integral powers.
+ for(let i=0;i<=m;i++)for(let j=0;j<=k;j++){
+   const freq=m+k-2*(i+j);
+   const numerator=binomial(m,i)*binomial(k,j)*(i%2===0?1:-1);
+   if(m%2===0){
+     const coeff=(m%4===0?1:-1)*numerator;
+     if(freq===0)result.push(mul(n(coeff/(2**(m+k))),X()));
+     else result.push(mul(n(coeff/(factor*freq)),f('sin',mul(n(freq),u))));
+   }else if(freq!==0){
+     const coeff=(m%4===1?1:-1)*numerator;
+     result.push(mul(n(-coeff/(factor*freq)),f('cos',mul(n(freq),u))));
+   }
+ }
+ return simplify(add(...result));
+}
+function exponentialTrigPrimitive(expr){
+ if(expr.t!=='m'||expr.v.length!==2)return null;
+ const exponential=expr.v.find(z=>z.t==='f'&&z.f==='exp');
+ const trig=expr.v.find(z=>z.t==='f'&&['sin','cos'].includes(z.f));
+ if(!exponential||!trig)return null;
+ const a=linearArgument(exponential.arg),b=linearArgument(trig.arg);
+ if(!a||!b)return null;
+ const denom=a.a*a.a+b.a*b.a;
+ if(denom<1e-12)return null;
+ return mul(n(1/denom),exponential,
+   trig.f==='sin'?add(mul(n(a.a),trig),neg(mul(n(b.a),f('cos',trig.arg)))):
+     add(mul(n(a.a),trig),mul(n(b.a),f('sin',trig.arg))));
+}
+function expTerm(e){
+ if(e?.t==='f'&&e.f==='exp')return {coef:1,arg:e.arg};
+ if(e?.t==='m'&&e.v.length===2&&e.v[0].t==='n'&&e.v[1].t==='f'&&e.v[1].f==='exp')
+   return {coef:e.v[0].v,arg:e.v[1].arg};
+ return null;
+}
+function exponentialQuotientPrimitive(expr){
+ const factors=expr.t==='m'?expr.v:[expr];
+ const denominator=factors.find(z=>z.t==='p'&&z.e===-1&&z.b.t==='a');
+ if(!denominator)return null;
+ const remaining=factors.filter(z=>z!==denominator);
+ if(remaining.length>1)return null;
+ const numerator=remaining.length?remaining[0]:n(1);
+ const terms=denominator.b.v;
+ let A=0,exp=null;
+ for(const term of terms){
+  if(term.t==='n'){A+=term.v;continue;}
+  const found=expTerm(term);
+  if(!found||exp)return null;
+  exp=found;
+ }
+ if(!exp||Math.abs(exp.coef)<1e-12)return null;
+ const slope=linearArgument(exp.arg);
+ if(!slope)return null;
+ const numexp=expTerm(numerator);
+ if(numerator.t==='n'){
+  const scale=numerator.v;
+  if(Math.abs(A)<1e-12)return mul(n(-scale/(exp.coef*slope.a)),f('exp',neg(exp.arg)));
+  return add(mul(n(scale/A),X()),
+     neg(mul(n(scale/(A*slope.a)),f('logabs',denominator.b))));
+ }
+ if(numexp&&base.sig(numexp.arg)===base.sig(exp.arg))
+   return mul(n(numexp.coef/(exp.coef*slope.a)),f('logabs',denominator.b));
+ return null;
+}
+function quadraticReciprocalPrimitive(expr){
+ // ∫ dx/(a x²+b x+c), for nonzero a and real coefficients.
+ if(expr.t!=='p'||expr.e!==-1)return null;
+ const terms=base.linearForm(expr.b);
+ if(!terms||![...terms.keys()].every(k=>['1','x','x^2'].includes(k)))return null;
+ const a=terms.get('x^2')||0,b=terms.get('x')||0,c=terms.get('1')||0;
+ if(Math.abs(a)<1e-12||Math.abs(c)<1e-12&&Math.abs(b)<1e-12)return null;
+ const D=4*a*c-b*b;
+ const u=add(mul(n(2*a),X()),n(b));
+ if(Math.abs(D)<1e-10)return mul(n(-2),pow(u,-1));
+ if(D>0)return mul(n(2/Math.sqrt(D)),f('atan',mul(n(1/Math.sqrt(D)),u)));
+ const root=Math.sqrt(-D);
+ return mul(n(1/root),f('logabs',div(add(u,n(-root)),add(u,n(root)))));
+}
+
+// Recurrences for exp(kx)/x^n, sin(kx)/x^n, cos(kx)/x^n.
+// All n≥1 cases reduce to Ei/Si/Ci and elementary terms.
+function inversePowerSpecialPrimitive(e){
+ if(e.t!=='m'||e.v.length!==2)return null;
+ const special=e.v.find(z=>z.t==='f'&&['exp','sin','cos'].includes(z.f));
+ const power=e.v.find(z=>z.t==='p'&&z.b?.t==='x'&&Number.isInteger(z.e)&&z.e<=-1&&z.e>=-8);
+ if(!special||!power)return null;
+ const lin=linearArgument(special.arg);
+ if(!lin||Math.abs(lin.b)>1e-10)return null;
+ const a=lin.a;
+ function recur(name,k){
+  if(k===1){
+   if(name==='exp')return f('Ei',special.arg);
+   if(name==='sin')return f('Si',special.arg);
+   return f('Ci',f('abs',special.arg));
+  }
+  const func=f(name,special.arg);
+  const lead=neg(mul(n(1/(k-1)),func,pow(X(),1-k)));
+  const mapped=name==='sin'?'cos':name==='cos'?'sin':'exp';
+  return add(lead,mul(n((name==='cos'?-1:1)*a/(k-1)),recur(mapped,k-1)));
+ }
+ return recur(special.f,-power.e);
+}
+// Weierstrass substitution: t=tan(x/2) integrates 1/(a+b*sin(x))
+// and 1/(a+b*cos(x)) in real elementary functions (per connected domain).
+function quadraticInVariablePrimitive(a,b,c,t){
+ const D=4*a*c-b*b;
+ if(Math.abs(a)<1e-12){
+   if(Math.abs(b)<1e-12)return Math.abs(c)<1e-12?null:mul(n(1/c),t);
+   return mul(n(1/b),f('logabs',add(mul(n(b),t),n(c))));
+ }
+ const u=add(mul(n(2*a),t),n(b));
+ if(Math.abs(D)<1e-10)return mul(n(-2),pow(u,-1));
+ if(D>0)return mul(n(2/Math.sqrt(D)),f('atan',mul(n(1/Math.sqrt(D)),u)));
+ const root=Math.sqrt(-D);
+ return mul(n(1/root),f('logabs',div(add(u,n(-root)),add(u,n(root)))));
+}
+function trigDenominatorInfo(expr){
+ const e=expr?.t==='p'&&expr.e===-1?expr.b:expr;
+ if(e?.t!=='a'||e.v.length!==2)return null;
+ const constants=e.v.filter(z=>z.t==='n');
+ if(constants.length!==1)return null;
+ const component=e.v.find(z=>z!==constants[0]);
+ const single=component?.t==='f'?{coef:1,fn:component}:component?.t==='m'&&component.v.length===2&&component.v[0].t==='n'&&component.v[1].t==='f'?{coef:component.v[0].v,fn:component.v[1]}:null;
+ if(!single||!['sin','cos'].includes(single.fn.f))return null;
+ const lin=linearArgument(single.fn.arg);
+ if(!lin||Math.abs(lin.b)>1e-10)return null;
+ return {a:constants[0].v,b:single.coef,kind:single.fn.f,theta:single.fn.arg,k:lin.a,base:e};
+}
+function trigLinearDenominatorPrimitive(denomInfo){
+ const {a,b,kind,theta,k}=denomInfo;
+ const t=f('tan',mul(n(.5),theta));
+ const A=kind==='sin'?a:a-b, B=kind==='sin'?2*b:0, C=kind==='sin'?a:a+b;
+ const result=quadraticInVariablePrimitive(A,B,C,t);
+ return result&&mul(n(2/k),result);
+}
+function trigQuotientPrimitive(expr){
+ const factors=expr.t==='m'?expr.v:[expr];
+ const reciprocal=factors.find(z=>z.t==='p'&&z.e===-1&&z.b.t==='a');
+ if(!reciprocal)return null;
+ const info=trigDenominatorInfo(reciprocal);
+ if(!info)return null;
+ const rest=factors.filter(z=>z!==reciprocal);
+ if(rest.length>1)return null;
+ const numerator=rest.length?rest[0]:n(1);
+ const antideriv=trigLinearDenominatorPrimitive(info);
+ if(!antideriv)return null;
+ if(numerator.t==='n')return mul(n(numerator.v),antideriv);
+ const factor=numerator.t==='f'?{coef:1,fn:numerator}:numerator.t==='m'&&numerator.v[0].t==='n'&&numerator.v.length===2&&numerator.v[1].t==='f'?{coef:numerator.v[0].v,fn:numerator.v[1]}:null;
+ if(!factor||base.sig(factor.fn.arg)!==base.sig(info.theta))return null;
+ if(factor.fn.f===info.kind){
+   if(Math.abs(info.b)<1e-12)return null;
+   return mul(n(factor.coef/info.b),add(X(),neg(mul(n(info.a),antideriv))));
+ }
+ if((info.kind==='sin'&&factor.fn.f==='cos')||(info.kind==='cos'&&factor.fn.f==='sin')){
+   if(Math.abs(info.b)<1e-12)return null;
+   return mul(n(factor.coef/(info.b*(info.kind==='sin'?1:-1)*info.k)),f('logabs',info.base));
+ }
+ return null;
+}
+
+function distributedPrimitive(e){
+ if(e.t!=='m'||base.expressionSize(e)>85)return null;
+ const idx=e.v.findIndex(z=>z.t==='a'&&z.v.length<=3);
+ if(idx<0)return null;
+ try{
+  const rest=e.v.filter((_,i)=>i!==idx);
+  return add(...e.v[idx].v.map(term=>integralInner(simplify(mul(...rest,term)))));
+ }catch(error){
+  if(error instanceof base.Unsupported||error instanceof RangeError)return null;
+  throw error;
+ }
+}
+// Rational powers of quadratic polynomials created by sqrt and inverse cards.
+function quadraticPowerPrimitive(e){
+ if(e.t!=='p'||(Math.abs(e.e+.5)>1e-10&&Math.abs(e.e+1.5)>1e-10))return null;
+ const lm=base.linearForm(e.b);
+ if(!lm||![...lm.keys()].every(key=>['1','x','x^2'].includes(key)))return null;
+ const A=lm.get('x^2')||0,B=lm.get('x')||0,C=lm.get('1')||0;
+ if(Math.abs(A)<1e-10)return null; // handled as a linear power
+ if(Math.abs(e.e+1.5)<1e-10){
+   const D=4*A*C-B*B;
+   if(Math.abs(D)<1e-10)return null;
+   return mul(n(2/D),add(mul(n(2*A),X()),n(B)),pow(e.b,-.5));
+ }
+ // Complete the square when the linear term is zero.
+ if(Math.abs(B)>1e-10)return null;
+ if(A<0&&C>0)return mul(n(1/Math.sqrt(-A)),f('asin',mul(n(Math.sqrt(-A/C)),X())));
+ if(A>0)return mul(n(1/Math.sqrt(A)),f('logabs',add(mul(n(Math.sqrt(A)),X()),f('sqrt',e.b))));
+ return null;
+}
+function powerSubstitutionPrimitive(e){
+ if(e.t!=='m')return null;
+ for(const factor of e.v){
+  if(factor.t!=='p'||Math.abs(factor.e)>8)continue;
+  let du;try{du=simplify(derivative(factor.b));}catch{continue;}
+  if(du.t==='n'&&Math.abs(du.v)<1e-10)continue;
+  const rest=mul(...e.v.filter(z=>z!==factor));
+  try{
+   const r=simplify(div(rest,du));
+   if(r.t!=='n'||!Number.isFinite(r.v))continue;
+   if(Math.abs(factor.e+1)<1e-10)return mul(r,f('logabs',factor.b));
+   return mul(n(r.v/(factor.e+1)),pow(factor.b,factor.e+1));
+  }catch{}
+ }
+ return null;
+}
 function integralInner(e){
+ const powers=trigonometricPowerPrimitive(e);if(powers)return powers;
+ const expTrig=exponentialTrigPrimitive(e);if(expTrig)return expTrig;
+ const inverseSpecial=inversePowerSpecialPrimitive(e);if(inverseSpecial)return inverseSpecial;
+ const logistic=exponentialQuotientPrimitive(e);if(logistic)return logistic;
+ const trigRatio=trigQuotientPrimitive(e);if(trigRatio)return trigRatio;
+ const distribution=distributedPrimitive(e);if(distribution)return distribution;
+ const quad=quadraticReciprocalPrimitive(e);if(quad)return quad;
+ const qpow=quadraticPowerPrimitive(e);if(qpow)return qpow;
+ const substitutedPower=powerSubstitutionPrimitive(e);if(substitutedPower)return substitutedPower;
  const elementary=elementaryPowerPrimitive(e);if(elementary)return elementary;
  const paired=pairPrimitive(e);if(paired)return paired;
  const special=specialAntiderivative(e);if(special)return special;
@@ -348,12 +609,30 @@ export function simplify(e){
  if(!e||typeof e!=='object')throw new base.Unsupported('式データが破損しています');
  switch(e.t){
   case 'I':return antiderivative(simplify(e.arg),e.order||1);
-  case 'D':return {t:'D',arg:simplify(e.arg),order:e.order||1};
+  case 'D':{
+   let evaluated=simplify(e.arg);
+   for(let i=0;i<Math.min(16,e.order||1);i++)evaluated=simplify(derivative(evaluated));
+   return evaluated;
+  }
   case 'L':return formalLimit(simplify(e.arg),e.point,e.side,e.kind||'lim');
   case 'a':return normalized(add(...e.v.map(simplify)));
   case 'm':return normalized(mul(...e.v.map(simplify)));
-  case 'p':return normalized(pow(simplify(e.b),e.e));
-  case 'f':return normalized(f(e.f,simplify(e.arg)));
+  case 'p':{
+   const inner=simplify(e.b);
+   if(inner.t==='p'&&inner.b?.t==='x'&&Number.isInteger(inner.e)&&inner.e>0&&inner.e%2===1&&
+     Number.isInteger(e.e*2))return pow(X(),inner.e*e.e);
+   if(e.e===-1 && inner.t==='f'){
+    const reciprocal={sin:'csc',cos:'sec',csc:'sin',sec:'cos',tan:'cot',cot:'tan'}[inner.f];
+    if(reciprocal)return f(reciprocal,inner.arg);
+   }
+   return normalized(pow(inner,e.e));
+  }
+  case 'f':{
+   const u=simplify(e.arg);
+   if(e.f==='sqrt'&&u.t==='p'&&u.b?.t==='x'&&Number.isInteger(u.e)&&u.e>0&&u.e%2===1)
+     return pow(X(),u.e/2);
+   return normalized(f(e.f,u));
+  }
   default:return base.simplify(e);
  }
 }
@@ -372,6 +651,7 @@ export function substituteNegX(e){
 const pretty=base.display;
 export function display(e,wrap=false){
  // Sum display follows descending degree even for plain elementary functions.
+ if(e?.t==='n')return displayNumber(e.v);
  if(!independent(e)&&e.t!=='a'&&e.t!=='m'&&e.t!=='p'&&e.t!=='f')return pretty(e,wrap);
  switch(e.t){
   case 'I':return e.order>1?`∫^${e.order}(${display(e.arg)})dx^${e.order}`:`∫(${display(e.arg)})dx`;
@@ -380,10 +660,10 @@ export function display(e,wrap=false){
    const point=e.point==='plus'?'+∞':e.point==='minus'?'−∞':e.side==='plus'?'0⁺':e.side==='minus'?'0⁻':'0';
    return `${e.kind||'lim'}[x→${point}](${display(e.arg)})`;
   }
-  case 'n':case 'x':return pretty(e,wrap);
+  case 'n':return displayNumber(e.v);case 'x':return pretty(e,wrap);
   case 'a':return `${wrap?'(' : ''}${orderedTerms(e.v).map(v=>display(v)).join(' + ').replace(/\+ -/g,'− ')}${wrap?')':''}`;
-  case 'm':return e.v.map((v,i)=>display(v,i>0)).join('·');
-  case 'p':return `${display(e.b,true)}^${e.e}`;
+  case 'm':return e.v.map((v,i)=>display(v,v.t==='a'||i>0)).join('·');
+  case 'p':return `${display(e.b,true)}^${displayNumber(e.e)}`;
   case 'f':{
    if(e.f==='sqrt')return `√(${display(e.arg)})`;
    if(e.f==='logabs')return `ln|${display(e.arg)}|`;

@@ -1,6 +1,6 @@
-import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.7';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.7';
-import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.7';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.8';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.8';
+import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.8';
 const $=id=>document.getElementById(id);
 const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
 const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
@@ -19,12 +19,12 @@ function currentMove() {
     partnerIndex:selection.partnerIndex, C:selection.C,side:selection.side,direction:selection.direction};
 }
 function save() {
-  try {localStorage.setItem('basis-duel-save-v7',JSON.stringify(game));}catch{}
+  try {localStorage.setItem('basis-duel-save-v8',JSON.stringify(game));}catch{}
 }
 function load() {
   try {
-    const s=JSON.parse(localStorage.getItem('basis-duel-save-v7'));
-    if(s&&s.version===7&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
+    const s=JSON.parse(localStorage.getItem('basis-duel-save-v8')||localStorage.getItem('basis-duel-save-v7'));
+    if(s&&(s.version===7||s.version===8)&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
   }catch{}
   return null;
 }
@@ -132,7 +132,7 @@ function runCom(){
     save();render();
   };
   try{
-    worker=new Worker('./com-worker.js?v=0.7',{type:'module'});
+    worker=new Worker('./com-worker.js?v=0.8',{type:'module'});
     comWorker=worker;
     watchdog=setTimeout(()=>finalize(null),3000);
     worker.onmessage=event=>finalize(event.data?.move||null);
@@ -203,7 +203,7 @@ document.addEventListener('change',e=>{
   if(e.target.id==='difficulty') {game.difficulty=e.target.value;save();}
 });
 const prior=load();
-if(prior){game=prior;$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}
+if(prior){game=prior;save();$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}
 else start();
 
 // Re-typeset after the deferred KaTeX script loads (fallback stays readable offline).

@@ -32,10 +32,11 @@ test('unhandled integral is rejected without creating a formal basis',()=>{
   const f=fn('sin',fn('exp',a));
   assert.throws(()=>integrate(f),/積分/);
 });
-test('repeated symbolic derivative uses compact order',()=>{
+test('legacy higher-order derivatives are evaluated, not left formal',()=>{
   let f={t:'D',arg:fn('sin',a),order:1};
   for(let i=0;i<10;i++)f=derivative(f);
-  assert.match(display(f),/d\^11\/dx\^11/);
+  assert.ok(!JSON.stringify(f).includes('"t":"D"'));
+  same(f,mul(constant(-1),fn('cos',a)));
 });
 test('simplifies x·x^-1 into 1, including old saved structures',()=>{
   same(mul(a,pow(a,-1)),constant(1));

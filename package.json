@@ -1,10 +1,11 @@
 {
   "name": "nabla-solo-prototype",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "simulate": "node sandbox_matches.mjs"
+    "simulate": "node sandbox_matches.mjs",
+    "audit": "node integral-audit.mjs 27 6 80"
   }
 }

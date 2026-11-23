@@ -17,6 +17,13 @@ export function mul(...items) {
     if(!e)throw new Unsupported('式が不正です');
     if(e.t==='m')flat.push(...e.v);else flat.push(e);
   }
+  // exp(u)exp(v) = exp(u+v); needed to avoid elementary integrals
+  // being missed after products and quotients of exponential cards.
+  const exponentials=flat.filter(z=>z.t==='f'&&z.f==='exp');
+  if(exponentials.length>=2){
+    const nonExp=flat.filter(z=>!(z.t==='f'&&z.f==='exp'));
+    return mul(...nonExp,fn('exp',add(...exponentials.map(z=>z.arg))));
+  }
   let coeff=1;
   const factors=new Map();
   for(const item of flat){
@@ -65,9 +72,14 @@ export function pow(base,exp) {
     if(base.v<0&&!Number.isInteger(exp)) throw new Unsupported('実数で定義されません');
     return n(base.v**exp);
   }
-  if(base.t==='p' && Number.isInteger(base.e) && Number.isInteger(exp) && base.e>=0 && exp>=0) return pow(base.b,base.e*exp);
+  // The game treats removable domain gaps as cancelled. Converting sqrt(u)^n
+  // into u^(n/2) exposes inverse square roots to the power-rule integrator.
+  if(base.t==='f' && base.f==='sqrt' && Number.isInteger(exp)) return pow(base.arg,exp/2);
+  // exp(u) never vanishes; exp(u)^n can always be canonicalized.
+  if(base.t==='f' && base.f==='exp' && Number.isInteger(exp)) return fn('exp',mul(n(exp),base.arg));
+  if(base.t==='p' && Number.isInteger(base.e) && Number.isInteger(exp)) return pow(base.b,base.e*exp);
   // Safe for nonnegative integral powers; e.g. (-x)^2 = x^2.
-  if(base.t==='m' && Number.isInteger(exp) && Math.abs(exp)>=2 && Math.abs(exp)<=8) return mul(...base.v.map(factor=>pow(factor,exp)));
+  if(base.t==='m' && Number.isInteger(exp) && Math.abs(exp)>=1 && Math.abs(exp)<=8) return mul(...base.v.map(factor=>pow(factor,exp)));
   return {t:'p',b:base,e:exp};
 }
 export function fn(f,arg) {
