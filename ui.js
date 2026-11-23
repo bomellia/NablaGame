@@ -1,6 +1,9 @@
 import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.2';
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.2';
+import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.5';
 const $=id=>document.getElementById(id);
+const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
+const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
 let game;
 let selection={cardIndex:0,owner:1,target:0,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard'};
 let thinking=false;
@@ -35,7 +38,7 @@ function start() {
 function fieldMarkup(owner) {
   const isEnemy=owner===1, name=isEnemy?'COM':'あなた', board=game.boards[owner];
   const fieldTarget=selection.owner===owner;
-  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${escapeHtml(display(e))}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
+  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${formulaHtml(e)}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
   return `<div class="field-head"><div class="person"><div class="avatar">${isEnemy?'C':'P'}</div><div><div class="person-name">${name}</div><div class="person-sub">${isEnemy?'COMPUTER OPPONENT':'PLAYER · YOU'}</div></div></div><div class="dimension"><strong>${board.length}</strong> 次元</div></div><div class="bases">${bases}</div>`;
 }
 function syncSelection() {
@@ -51,7 +54,7 @@ function syncSelection() {
 function handMarkup() {
   return game.hands[0].map((id,i)=>{
     const c=getCard(id);
-    return `<button type="button" ${thinking||game.finished||game.turn!==0?'disabled':''} class="card ${escapeHtml(c.kind)} ${c.expansion?'expansion':''} ${selection.cardIndex===i?'selected':''}" data-card="${i}" title="${escapeHtml(c.description)}"><span class="card-type">${c.expansion?'拡張':c.kind==='function'?'関数':c.kind==='global'?'全体演算':'演算'}</span><span class="card-symbol">${escapeHtml(c.label)}</span><span class="card-number">CARD ${i+1}</span></button>`;
+    return `<button type="button" ${thinking||game.finished||game.turn!==0?'disabled':''} class="card ${escapeHtml(c.kind)} ${c.expansion?'expansion':''} ${selection.cardIndex===i?'selected':''}" data-card="${i}" title="${escapeHtml(c.description)}"><span class="card-type">${c.expansion?'拡張':c.kind==='function'?'関数':c.kind==='global'?'全体演算':'演算'}</span><span class="card-symbol">${cardHtml(id)}</span><span class="card-number">CARD ${i+1}</span></button>`;
   }).join('');
 }
 function actionMarkup() {
@@ -147,3 +150,4 @@ document.addEventListener('change',e=>{
 const prior=load();
 if(prior){game=prior;$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}
 else start();
+window.addEventListener('load',()=>{if(game)render();});

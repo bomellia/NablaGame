@@ -15,3 +15,10 @@ dialog{max-width:620px;width:calc(100% - 30px);max-height:80vh;border:1px solid 
 
 .swap-note{font-size:12px;color:#a8c2dc;background:#182a3e;border:1px solid #2a425c;border-radius:9px;padding:10px 12px;line-height:1.5;margin-bottom:12px}
 .swap-button{border-color:#776c98;color:#dbcfef;background:#292843}
+/* KaTeX: preserve readable mathematics without disturbing card dimensions. */
+.formula .katex,.card-symbol .katex{white-space:nowrap}
+.basis .formula{max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:clip}
+.card .card-symbol{max-width:100%;min-width:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.inspect-formula{font-family:inherit;white-space:normal;overflow-x:auto;overflow-y:auto;max-width:100%;font-size:22px;line-height:1.8}
+.inspect-formula .katex{white-space:nowrap;font-size:1em}
+@media(max-width:650px){.basis .formula .katex{font-size:.95em}.card-symbol .katex{font-size:.92em}}
