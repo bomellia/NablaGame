@@ -1,5 +1,5 @@
-import {latexNumber} from './number-format.js?v=0.8';
-import {orderedTerms} from './normalization.js?v=0.8';
+import {latexNumber} from './number-format.js?v=0.9';
+import {orderedTerms} from './normalization.js?v=0.9';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -67,6 +67,11 @@ export function toLatex(e){
   }
   case 'f':{
    const a=toLatex(e.arg);
+   const ell=/^Elliptic([EF])(Sin|Cos)(?::(.+))?$/.exec(e.f);
+   if(ell){
+    const phase=`\\frac{${a}}{2}${ell[2]==='Sin'?'-\\frac{\\pi}{4}':''}`;
+    return `${ell[1]}\\left(${phase}\\mid ${numberLatex(ell[3]===undefined?2:Number(ell[3]))}\\right)`;
+   }
    if(e.f==='sqrt')return `\\sqrt{${a}}`;
    if(e.f==='abs')return `\\left|${a}\\right|`;
    if(e.f==='logabs')return `\\ln\\left|${a}\\right|`;

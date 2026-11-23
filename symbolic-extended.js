@@ -1,14 +1,39 @@
-import {displayNumber} from './number-format.js?v=0.8';
+import {displayNumber} from './number-format.js?v=0.9';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.8';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.8';
-export * from './symbolic.js?v=0.8';
+import * as base from './symbolic.js?v=0.9';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.9';
+export * from './symbolic.js?v=0.9';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
 // this rewriting does not add points to the real domain.
+// Standard incomplete elliptic integrals with parameter m=2. The stored
+// argument is the original trigonometric phase u, not the elliptic amplitude.
+// This keeps differentiation exact without a floating-point pi/4 shift.
+function ellipticInfo(name){
+ const match=/^Elliptic([EF])(Sin|Cos)(?::(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?))?$/.exec(name);
+ if(!match)return null;
+ const m=match[3]===undefined?2:Number(match[3]);
+ return Number.isFinite(m)?{kind:match[1],trig:match[2].toLowerCase(),m}:null;
+}
+export {ellipticInfo};
 export function fn(name,arg){
+ if((name==='log'||name==='logabs')&&arg?.t==='p'){
+  const k=arg.e;
+  if(Number.isInteger(k)){
+   if(name==='logabs'||k%2===0)return base.mul(n(k),fn('logabs',arg.b));
+   return base.mul(n(k),fn('log',arg.b));
+  }
+  // Real fractional powers of a positive base: retain the positive log branch.
+  if(Number.isInteger(k*2))return base.mul(n(k),fn('log',arg.b));
+ }
+ if((name==='log'||name==='logabs')&&arg?.t==='f'&&arg.f==='sqrt')return base.mul(n(.5),fn('log',arg.arg));
+ if(name==='logabs'&&arg?.t==='f'&&arg.f==='abs')return fn('logabs',arg.arg);
+ if(name==='logabs'&&arg?.t==='f'&&arg.f==='exp')return arg.arg;
+ if(name==='logabs'&&arg?.t==='m')return base.add(...arg.v.map(v=>fn('logabs',v)));
+ if(name==='log'&&arg?.t==='m'&&arg.v[0]?.t==='n'&&arg.v[0].v>0)
+  return base.add(fn('log',arg.v[0]),fn('log',base.mul(...arg.v.slice(1))));
  if(arg?.t==='n'){
   const v=arg.v;
   if(name==='tan'){
@@ -83,6 +108,11 @@ export const formalLimit=(arg,point='plus',side='two',kind='lim')=>({t:'L',arg,p
 function independent(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&independent(e.arg)||e.b&&independent(e.b)||Array.isArray(e.v)&&e.v.some(independent)||e.t==='f'&&['Li','Ei','Si','Ci','erf','erfi','FresnelS','FresnelC','Shi','Chi','abs','tan','cot','sec','csc','atan','tanh','sinh','cosh'].includes(e.f));}
 function derivativeFn(e){
  const a=e.arg, da=derivative(a), df=v=>mul(v,da);
+ const elliptic=ellipticInfo(e.f);
+ if(elliptic){
+  const radicand=add(n(1-elliptic.m/2),mul(n(elliptic.m/2),f(elliptic.trig,a)));
+  return df(mul(n(.5),pow(radicand,elliptic.kind==='E'?.5:-.5)));
+ }
  switch(e.f){
   case 'exp':return df(f('exp',a));
   case 'sin':return df(f('cos',a));
@@ -498,7 +528,105 @@ function powerSubstitutionPrimitive(e){
  }
  return null;
 }
+// Integrate arbitrary game-supported integer and half-integer powers of
+// sin/cos by reduction. Reciprocal powers of tan/cot/sec/csc use the
+// same algebra. Elliptic E and F are the two half-integer base cases.
+function singleTrigPower(e){
+ let t=e,k=1;
+ if(e.t==='p'){t=e.b;k=e.e;}
+ if(t.t==='f'&&t.f==='sqrt'){t=t.arg;k*=.5;}
+ if(t.t!=='f'||!['sin','cos','tan','cot','sec','csc'].includes(t.f)||!Number.isInteger(k*2)||Math.abs(k)>16)return null;
+ let name=t.f;
+ if(name==='sec'||name==='csc'){name=name==='sec'?'cos':'sin';k=-k;}
+ if((name==='tan'||name==='cot')&&k<0){name=name==='tan'?'cot':'tan';k=-k;}
+ return {name,u:t.arg,k};
+}
+function trigSinglePrimitive(name,u,k){
+ const v=f(name,u), S=f('sin',u), C=f('cos',u);
+ if(k===0)return u;
+ if(name==='tan'||name==='cot'){
+  if(!Number.isInteger(k)||k<0)return null;
+  if(k===1)return elementaryFunctionPrimitive(name,u);
+  const prior=trigSinglePrimitive(name,u,k-2);
+  return add(mul(n((name==='tan'?1:-1)/(k-1)),pow(v,k-1)),neg(prior));
+ }
+ if(k===1)return name==='sin'?neg(C):S;
+ if(k===-1)return elementaryFunctionPrimitive(name==='sin'?'csc':'sec',u);
+ if(k===.5||k===-.5){
+  const special='Elliptic'+(k>0?'E':'F')+(name==='sin'?'Sin':'Cos');
+  return mul(n(2),f(special,u));
+ }
+ const other=name==='sin'?C:S;
+ const sign=name==='sin'?-1:1;
+ if(k>1){
+  const prior=trigSinglePrimitive(name,u,k-2);if(!prior)return null;
+  return add(mul(n(sign/k),pow(v,k-1),other),mul(n((k-1)/k),prior));
+ }
+ if(k<-1){
+  const prior=trigSinglePrimitive(name,u,k+2);if(!prior)return null;
+  return add(mul(n(-sign/(k+1)),pow(v,k+1),other),mul(n((k+2)/(k+1)),prior));
+ }
+ return null;
+}
+function trigExtendedPrimitive(e){
+ const parts=(e.t==='m'?e.v:[e]).map(singleTrigPower);
+ if(parts.some(p=>!p)||parts.length>2)return null;
+ const u=parts[0].u,lin=linearArgument(u);
+ if(!lin||parts.some(p=>base.sig(p.u)!==base.sig(u)))return null;
+ if(parts.length===1){
+  const {name,k}=parts[0];
+  // Keep the compact existing Fourier/substitution rules for positive integers.
+  if(['sin','cos'].includes(name)&&Number.isInteger(k)&&k>=1&&k<=8&&trigPowerFactor(e))return null;
+  const result=trigSinglePrimitive(name,u,k);return result&&mul(n(1/lin.a),result);
+ }
+ if(parts.some(p=>!['sin','cos'].includes(p.name)))return null;
+ let m=parts.filter(p=>p.name==='sin').reduce((a,p)=>a+p.k,0), c=parts.filter(p=>p.name==='cos').reduce((a,p)=>a+p.k,0);
+ if(m>=0&&c>=0&&Number.isInteger(m)&&Number.isInteger(c))return null;
+ // An odd positive exponent permits t=sin(u) or t=cos(u) substitution;
+ // the other exponent can be negative or fractional, including the log case.
+ for(const cosineOdd of [true,false]){
+  const odd=cosineOdd?c:m, other=cosineOdd?m:c;
+  if(odd<1||!Number.isInteger(odd)||odd%2!==1)continue;
+  const t=f(cosineOdd?'sin':'cos',u), terms=[];
+  for(let j=0;j<=(odd-1)/2;j++){
+   const k=other+2*j+1,coef=(cosineOdd?1:-1)*(-1)**j*binomial((odd-1)/2,j)/lin.a;
+   terms.push(mul(n(k===0?coef:coef/k),k===0?f('logabs',t):pow(t,k)));
+  }
+  return add(...terms);
+ }
+ // Both even/negative powers: t=tan(u) turns the expression into a
+ // finite Laurent polynomial when -(m+c)/2-1 is a nonnegative integer.
+ const d=-(m+c)/2-1;
+ if(Number.isInteger(m)&&Number.isInteger(d)&&d>=0&&d<=12){
+  const t=f('tan',u),terms=[];
+  for(let j=0;j<=d;j++){
+   const k=m+2*j+1,coef=binomial(d,j)/lin.a;
+   if(Math.abs(k)>16)return null;
+   terms.push(mul(n(k===0?coef:coef/k),k===0?f('logabs',t):pow(t,k)));
+  }
+  return add(...terms);
+ }
+ return null;
+}
+function affineTrigEllipticPrimitive(e){
+ let u,p;
+ if(e.t==='f'&&e.f==='sqrt'){u=e.arg;p=.5;}
+ else if(e.t==='p'&&Math.abs(e.e)===.5){u=e.b;p=e.e;}else return null;
+ if(u.t!=='a'||u.v.length!==2)return null;
+ const constant=u.v.find(t=>t.t==='n');if(!constant)return null;
+ const term=u.v.find(t=>t!==constant);
+ let coef=1,trig=term;
+ if(term.t==='m'&&term.v.length===2&&term.v[0].t==='n'){coef=term.v[0].v;trig=term.v[1];}
+ if(trig.t!=='f'||!['sin','cos'].includes(trig.f))return null;
+ const lin=linearArgument(trig.arg),a=constant.v+coef;
+ if(!lin||a<=0||coef===0)return null;
+ const m=2*coef/a;if(!Number.isFinite(m))return null;
+ const name='Elliptic'+(p>0?'E':'F')+(trig.f==='sin'?'Sin':'Cos')+(m===2?'':':'+m);
+ return mul(n(2*a**p/lin.a),f(name,trig.arg));
+}
 function integralInner(e){
+ const elliptic=affineTrigEllipticPrimitive(e);if(elliptic)return elliptic;
+ const extendedTrig=trigExtendedPrimitive(e);if(extendedTrig)return extendedTrig;
  const powers=trigonometricPowerPrimitive(e);if(powers)return powers;
  const expTrig=exponentialTrigPrimitive(e);if(expTrig)return expTrig;
  const inverseSpecial=inversePowerSpecialPrimitive(e);if(inverseSpecial)return inverseSpecial;
@@ -575,6 +703,9 @@ function linearTerms(e){
    const inner=e.v.length===2?e.v[1]:base.mul(...e.v.slice(1));
    return new Map([...linearTerms(inner)].map(([k,v])=>[k,v*e.v[0].v]));
  }
+ // On the common real domain, ln|u| = ln(u) wherever ln(u) exists.
+ // Keep the displayed domain distinction; only identify these linear atoms.
+ if(e.t==='f'&&e.f==='logabs')return new Map([[base.sig({t:'f',f:'log',arg:e.arg}),1]]);
  return new Map([[base.sig(e),1]]);
 }
 function vectorRank(vectors){
@@ -631,6 +762,7 @@ export function simplify(e){
    const u=simplify(e.arg);
    if(e.f==='sqrt'&&u.t==='p'&&u.b?.t==='x'&&Number.isInteger(u.e)&&u.e>0&&u.e%2===1)
      return pow(X(),u.e/2);
+   if(e.f==='sqrt'&&u.t==='f'&&['sin','cos'].includes(u.f))return pow(u,.5);
    return normalized(f(e.f,u));
   }
   default:return base.simplify(e);
@@ -665,6 +797,11 @@ export function display(e,wrap=false){
   case 'm':return e.v.map((v,i)=>display(v,v.t==='a'||i>0)).join('·');
   case 'p':return `${display(e.b,true)}^${displayNumber(e.e)}`;
   case 'f':{
+   const ell=ellipticInfo(e.f);
+   if(ell){
+    const phase=ell.trig==='sin'?`(${display(e.arg)})/2−π/4`:`(${display(e.arg)})/2`;
+    return `Elliptic${ell.kind}(${phase}|${displayNumber(ell.m)})`;
+   }
    if(e.f==='sqrt')return `√(${display(e.arg)})`;
    if(e.f==='logabs')return `ln|${display(e.arg)}|`;
    if(e.f==='abs')return `|${display(e.arg)}|`;
@@ -696,6 +833,17 @@ function trigOuter(name,arg,point,side,depth){
 }
 function specialLimit(e,point,side,depth){
  const name=e.f;
+ const ell=ellipticInfo(name);
+ if(ell){
+  const l=limitRec(e.arg,point,side,depth+1);
+  if(!isFinite(l))return unknown;
+  const phase=ell.trig==='sin'?l.v/2-Math.PI/4:l.v/2;
+  if(Math.abs(phase)>Math.PI/4+1e-10)return unknown;
+  if(Math.abs(phase)<1e-10)return finite(0);
+  // Nonzero elliptic constants require a constant-algebra implementation
+  // before they can safely be used for basis rank. Do not guess.
+  return unknown;
+ }
  if(['sin','cos','tan','cot','sec','csc','exp','log','logabs','sqrt'].includes(name)){
   const l=limitRec(e.arg,point,side,depth+1);
   if(isBad(l))return nonexistent;

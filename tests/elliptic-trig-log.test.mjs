@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {x,constant as n,fn,pow,mul,add,div,integrate,derivative,simplify,reduceBasis,display,limit} from '../symbolic-extended.js';
+import {toLatex} from '../latex.js';
+import {newGame,preview,normalizeGame} from '../engine.js';
+const X=x(),sin=fn('sin',X),cos=fn('cos',X);
+function ev(e,t){switch(e.t){case'n':return e.v;case'x':return t;case'a':return e.v.reduce((a,b)=>a+ev(b,t),0);case'm':return e.v.reduce((a,b)=>a*ev(b,t),1);case'p':return ev(e.b,t)**e.e;case'f':{const u=ev(e.arg,t);const fs={sin:Math.sin,cos:Math.cos,tan:Math.tan,cot:v=>1/Math.tan(v),sec:v=>1/Math.cos(v),csc:v=>1/Math.sin(v),sqrt:Math.sqrt,log:Math.log,logabs:v=>Math.log(Math.abs(v)),abs:Math.abs,exp:Math.exp};if(fs[e.f])return fs[e.f](u);break;}}throw Error(JSON.stringify(e));}
+function check(e){const result=integrate(e);const d=simplify(derivative(result));assert.ok(!JSON.stringify(result).includes('"t":"I"'));for(const v of [.23,.47,.81,1.12]){const expected=ev(e,v),actual=ev(d,v);assert.ok(Math.abs(actual-expected)<3e-6*Math.max(1,Math.abs(expected)));}return result;}
+for(const name of ['sin','cos'])for(const k of [-7,-4,-3,-2,-1,-.5,-1.5,-2.5,-3.5,.5,1.5,2.5,3.5,1,2,3,4,5,6,7,8,9,10,12,16])test(name+'^'+k,()=>{const e=pow(fn(name,X),k);const result=check(e);if(!Number.isInteger(k))assert.match(display(result),/Elliptic[EF]/);});
+for(const name of ['tan','cot','sec','csc'])for(const k of [-5,-3,-2,-1,1,2,3,4,5,6,8])test(name+'^'+k,()=>check(pow(fn(name,X),k)));
+for(const [m,c] of [[-3,1],[1,-3],[-2,-2],[-4,-2],[-2,3],[3,-2],[.5,1],[1,-.5],[1,3],[2,4],[3,3]])test('mixed powers '+m+','+c,()=>check(mul(pow(sin,m),pow(cos,c))));
+test('elliptic round trip exact for square roots and reciprocal roots',()=>{for(const z of [sin,cos])for(const k of [.5,-.5]){const e=pow(z,k);const result=check(e);assert.deepEqual(simplify(derivative(result)),simplify(e));assert.match(toLatex(result),/[EF]\\left\(/);assert.match(toLatex(result),/\\mid 2/);}check(fn('sqrt',sin));});
+test('linear phase elliptic powers',()=>{const u=add(mul(n(2),X),n(.2));const e=pow(fn('sin',u),.5);const result=integrate(e);const d=simplify(derivative(result));for(const v of [.1,.3,.5])assert.ok(Math.abs(ev(d,v)-ev(e,v))<1e-8);});
+test('ln power and dependent bases',()=>{const log=fn('log',X);const odd={t:'f',f:'log',arg:pow(X,3)};assert.deepEqual(simplify(odd),mul(n(3),log));assert.equal(reduceBasis([odd,log]).kept.length,1);assert.equal(reduceBasis([fn('log',pow(X,2)),log]).kept.length,1);assert.equal(reduceBasis([fn('log',mul(n(2),X)),log,n(1)]).kept.length,2);check(odd);check(fn('log',pow(X,-3)));check(fn('log',pow(X,2)));});
+test('game operations and old board normalization',()=>{const state=newGame();state.boards[1]=[{t:'f',f:'log',arg:pow(X,3)},fn('log',X),fn('sqrt',sin)];const norm=normalizeGame(state);assert.equal(norm.boards[1].length,2);norm.hands[norm.turn]=['INTEGRATE'];const result=preview(norm,{cardIndex:0,owner:1,target:1,C:0});assert.equal(result.ok,true,result.reason);assert.match(display(result.state.boards[1][1]),/EllipticE/);});
+test('elliptic zero limit of cosine branch is certified',()=>{const e=integrate(pow(cos,.5));assert.deepEqual(limit(e,'zero','two'),{type:'finite',v:0});});
+for(const name of ['sin','cos'])for(const k of [.5,-.5])for(const coef of [1,-.5,3])test('affine elliptic '+name+' '+k+' '+coef,()=>{const e=pow(add(n(2),mul(n(coef),fn(name,X))),k);const result=check(e);assert.match(display(result),/Elliptic[EF]/);assert.match(toLatex(result),/[EF]\\left\(/);});
