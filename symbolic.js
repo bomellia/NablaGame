@@ -12,20 +12,27 @@ export const isZero = e => isN(e,0);
 export const isOne = e => isN(e,1);
 const keyOrder = (a,b) => sig(a).localeCompare(sig(b));
 export function mul(...items) {
-  const args=[];let coeff=1;
-  for(const e of items.flat()) {
-    if(!e) throw new Unsupported('式が不正です');
-    if(e.t==='m') args.push(...e.v);
-    else args.push(e);
+  const flat=[];
+  for(const e of items.flat()){
+    if(!e)throw new Unsupported('式が不正です');
+    if(e.t==='m')flat.push(...e.v);else flat.push(e);
   }
-  const core=[];
-  for(const e of args) { if(e.t==='n') coeff*=e.v; else core.push(e); }
+  let coeff=1;
+  const factors=new Map();
+  for(const item of flat){
+    if(item.t==='n'){coeff*=item.v;continue;}
+    const exp=item.t==='p'?item.e:1, b=item.t==='p'?item.b:item;
+    const key=sig(b),prev=factors.get(key);
+    factors.set(key,{b,exp:tidy((prev?.exp||0)+exp)});
+  }
   coeff=tidy(coeff);
-  if(!Number.isFinite(coeff)) throw new Unsupported('数値が大きすぎます');
-  if(near(coeff)) return n(0);
+  if(!Number.isFinite(coeff))throw new Unsupported('数値が大きすぎます');
+  if(near(coeff))return n(0);
+  const core=[];
+  for(const {b,exp} of factors.values())if(!near(exp))core.push(near(exp,1)?b:pow(b,exp));
   core.sort(keyOrder);
-  if(!core.length) return n(coeff);
-  if(!near(coeff,1)) core.unshift(n(coeff));
+  if(!core.length)return n(coeff);
+  if(!near(coeff,1))core.unshift(n(coeff));
   return core.length===1?core[0]:{t:'m',v:core};
 }
 function splitCoef(e) {
@@ -60,10 +67,14 @@ export function pow(base,exp) {
   }
   if(base.t==='p' && Number.isInteger(base.e) && Number.isInteger(exp) && base.e>=0 && exp>=0) return pow(base.b,base.e*exp);
   // Safe for nonnegative integral powers; e.g. (-x)^2 = x^2.
-  if(base.t==='m' && Number.isInteger(exp) && exp>=2 && exp<=8) return mul(...base.v.map(factor=>pow(factor,exp)));
+  if(base.t==='m' && Number.isInteger(exp) && Math.abs(exp)>=2 && Math.abs(exp)<=8) return mul(...base.v.map(factor=>pow(factor,exp)));
   return {t:'p',b:base,e:exp};
 }
 export function fn(f,arg) {
+  if((f==='sin'||f==='cos')&&arg.t==='m'&&arg.v[0]?.t==='n'&&near(arg.v[0].v,-1)){
+    const unsigned=mul(...arg.v.slice(1));
+    return f==='sin'?mul(n(-1),fn('sin',unsigned)):fn('cos',unsigned);
+  }
   if(arg.t==='n') {
     const a=arg.v;
     if(f==='exp') return n(Math.exp(a));
@@ -81,6 +92,18 @@ export function fn(f,arg) {
 }
 export const neg = e => mul(n(-1),e);
 export const div = (a,b) => mul(a,pow(b,-1));
+export function simplify(e){
+  if(!e||typeof e!=='object')throw new Unsupported('式が不正です');
+  switch(e.t){
+    case 'n':return n(e.v);
+    case 'x':return x();
+    case 'a':return add(...e.v.map(simplify));
+    case 'm':return mul(...e.v.map(simplify));
+    case 'p':return pow(simplify(e.b),e.e);
+    case 'f':return fn(e.f,simplify(e.arg));
+    default:throw new Unsupported('未知の式形式です');
+  }
+}
 export function fromCard(id) {
   switch(id) {
     case 'ZERO':return n(0);case 'ONE':return n(1);case 'X':return x();
