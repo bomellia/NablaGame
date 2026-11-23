@@ -58,7 +58,11 @@
     <footer>非公式ファン制作の技術試作版 / 非初等関数・未評価の積分にも対応 / オリジナルカード・デザインを使用</footer>
   </div>
 
-  <dialog id="help-dialog">
+  <dialog id="formula-dialog" aria-label="数式の詳細">
+ <div class="dialog-header"><h2 id="formula-title">数式の詳細</h2><button type="button" class="ghost" id="close-formula">閉じる</button></div>
+ <div class="dialog-body"><div id="formula-body" class="inspect-formula"></div></div>
+</dialog>
+<dialog id="help-dialog">
     <div class="dialog-header"><h2>遊び方・試作版の仕様</h2><button class="ghost" id="close-help">閉じる</button></div>
     <div class="dialog-body">
       <p>お互いに <strong>1, x, x²</strong> の3基底から開始します。カードを使い、相手の場の基底をすべて消せば勝利です。</p>

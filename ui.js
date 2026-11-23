@@ -127,7 +127,15 @@ function hint(){
 function handleClick(e){
   const elem=e.target.closest('button');if(!elem)return;
   if(elem.dataset.card!==undefined) {selection.cardIndex=Number(elem.dataset.card);selection.partnerIndex=-1;selection.C=selectedCard()==='PLUS_C'?1:0;render();return;}
-  if(elem.dataset.owner!==undefined){selection.owner=Number(elem.dataset.owner);selection.target=Number(elem.dataset.index);render();return;}
+  if(elem.dataset.owner!==undefined){
+    const owner=Number(elem.dataset.owner),idx=Number(elem.dataset.index);
+    if(selection.owner===owner&&selection.target===idx&&game.boards[owner]?.[idx]){
+      $('formula-title').textContent=(owner===1?'COM':'あなた')+' の基底 '+(idx+1);
+      $('formula-body').innerHTML=formulaHtml(game.boards[owner][idx]);
+      $('formula-dialog').showModal();return;
+    }
+    selection.owner=owner;selection.target=idx;render();return;
+  }
   if(elem.id==='act-btn'){const move=currentMove();if(move)takeTurn(move);}
   if(elem.id==='hint-btn')hint();
   if(elem.id==='swap-btn'&&game.deck.length)takeTurn({discard:true,cardIndex:selection.cardIndex});
@@ -137,6 +145,7 @@ function handleClick(e){
   }
   if(elem.id==='help-btn')$('help-dialog').showModal();
   if(elem.id==='close-help')$('help-dialog').close();
+  if(elem.id==='close-formula')$('formula-dialog').close();
 }
 document.addEventListener('click',handleClick);
 document.addEventListener('change',e=>{
