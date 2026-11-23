@@ -28,10 +28,9 @@ for(const [name,expression,pattern] of examples) {
     }
   });
 }
-test('unhandled integral is retained formally and can be differentiated',()=>{
-  const f=fn('sin',fn('exp',a));const integral=integrate(f);
-  assert.match(display(integral),/^∫\(/);same(derivative(integral),f);
-  const twice=integrate(integral);same(derivative(twice),integral);
+test('unhandled integral is rejected without creating a formal basis',()=>{
+  const f=fn('sin',fn('exp',a));
+  assert.throws(()=>integrate(f),/積分/);
 });
 test('repeated symbolic derivative uses compact order',()=>{
   let f={t:'D',arg:fn('sin',a),order:1};

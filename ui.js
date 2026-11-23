@@ -1,6 +1,6 @@
-import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.6';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.6';
-import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.6';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.7';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.7';
+import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.7';
 const $=id=>document.getElementById(id);
 const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
 const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
@@ -19,12 +19,12 @@ function currentMove() {
     partnerIndex:selection.partnerIndex, C:selection.C,side:selection.side,direction:selection.direction};
 }
 function save() {
-  try {localStorage.setItem('basis-duel-save',JSON.stringify(game));}catch{}
+  try {localStorage.setItem('basis-duel-save-v7',JSON.stringify(game));}catch{}
 }
 function load() {
   try {
-    const s=JSON.parse(localStorage.getItem('basis-duel-save'));
-    if(s&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
+    const s=JSON.parse(localStorage.getItem('basis-duel-save-v7'));
+    if(s&&s.version===7&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
   }catch{}
   return null;
 }
@@ -39,7 +39,7 @@ function start() {
 function fieldMarkup(owner) {
   const isEnemy=owner===1, name=isEnemy?'COM':'あなた', board=game.boards[owner];
   const fieldTarget=selection.owner===owner;
-  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${formulaHtml(e)}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
+  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${display(e).length>24?mathMarkup("f(x)","f(x)"):formulaHtml(e)}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
   return `<div class="field-head"><div class="person"><div class="avatar">${isEnemy?'C':'P'}</div><div><div class="person-name">${name}</div><div class="person-sub">${isEnemy?'COMPUTER OPPONENT':'PLAYER · YOU'}</div></div></div><div class="dimension"><strong>${board.length}</strong> 次元</div></div><div class="bases">${bases}</div>`;
 }
 function syncSelection() {
@@ -81,6 +81,10 @@ function render() {
   syncSelection();
   $('opponent').className='field opponent'; $('player').className='field';
   $('opponent').innerHTML=fieldMarkup(1);$('player').innerHTML=fieldMarkup(0);
+  const activeBasis=game.boards[selection.owner]?.[selection.target];
+  $('selected-card').innerHTML=selectedCard()?cardHtml(selectedCard()):'';
+  $('selected-label').textContent=activeBasis?`${selection.owner===1?'COM':'あなた'} · 基底 ${String(selection.target+1).padStart(2,'0')}`:'選択中の基底';
+  $('selected-formula').innerHTML=activeBasis?formulaHtml(activeBasis):'基底がありません';
   $('hand').innerHTML=handMarkup();$('action-panel').innerHTML=actionMarkup();
   $('hand-count').textContent=`${game.hands[0].length}枚`;
   $('deck-count').textContent=`山札 ${game.deck.length} 枚`;
@@ -128,7 +132,7 @@ function runCom(){
     save();render();
   };
   try{
-    worker=new Worker('./com-worker.js?v=0.6',{type:'module'});
+    worker=new Worker('./com-worker.js?v=0.7',{type:'module'});
     comWorker=worker;
     watchdog=setTimeout(()=>finalize(null),3000);
     worker.onmessage=event=>finalize(event.data?.move||null);
@@ -152,7 +156,7 @@ function takeTurn(move){
   save();render();runCom();
 }
 function hint(){
-  const moves=legalMoves(game,{limit:350,perCardOwner:24});
+  const moves=legalMoves(game,{limit:150,perCardOwner:10});
   if(!moves.length)return;
   const best=[...moves].sort((a,b)=>{
     const da=a.scoreDelta||[0,0],db=b.scoreDelta||[0,0];

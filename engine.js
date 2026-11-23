@@ -1,12 +1,22 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.6';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.7';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.6';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.7';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
 }
-const initialBoard = () => [fromCard('ONE'),fromCard('X'),fromCard('X2')];
+// Both players receive the exact same three independent random bases.
+// Function classes are mirrored to eliminate start-position strength disparity.
+export function initialBoard(random=Math.random){
+  const choose=options=>options[Math.min(options.length-1,Math.floor(random()*options.length))];
+  return [
+    choose([fromCard('X2'),mul(fromCard('X2'),x())]),
+    choose([fromCard('SIN'),fromCard('COS')]),
+    choose([fromCard('EXP'),fn('exp',mul(constant(-1),x()))])
+  ].map(simplify);
+}
+
 const MAX_EXPRESSION_SIZE=175;
 const MAX_DISPLAY_LENGTH=2000;
 const SOFT_SIZE=110, SOFT_LENGTH=260;
@@ -16,9 +26,11 @@ function safeDerivative(e){
   return e.t==='D'?{t:'D',arg:e.arg,order:(e.order||1)+1}:{t:'D',arg:e,order:1};
 }
 function safeIntegral(e,C){
-  try {const out=integrate(e,C);if(expressionSize(out)<SOFT_SIZE&&display(out).length<SOFT_LENGTH)return out;}
-  catch(error){if(!(error instanceof Unsupported||error instanceof RangeError))throw error;}
-  return add(antiderivative(e),constant(C));
+ // Unsupported integrals are illegal, never formal placeholder bases.
+ const out=integrate(simplify(e),C);
+ if(expressionSize(out)>=SOFT_SIZE||display(out).length>=SOFT_LENGTH)
+   throw new Unsupported('積分結果が大きすぎるため、この操作はできません');
+ return out;
 }
 /** A legacy formal limit was never proven. It must not take part in scoring. */
 function hasLegacyLimit(e){
@@ -55,7 +67,8 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   const deck=shuffle(makeDeck(extended),random);
   const hands=[[],[]];
   for(let i=0;i<7;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
-  return {boards:[initialBoard(),initialBoard()],hands,deck,turn:startingPlayer,
+  const opening=initialBoard(random);
+  return {version:7,boards:[copy(opening),copy(opening)],hands,deck,turn:startingPlayer,
     turns:0,finished:false,winner:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
@@ -133,16 +146,16 @@ export function applyMove(s,move) {
   const ns=copy(s), own=ns.boards[move.owner];
   const used=[move.cardIndex]; let info='';
   if(card.kind==='function') {
-    own.push(fromCard(id));
+    own.push(simplify(fromCard(id)));
     info=`${card.label} を基底に追加`;
   } else if(card.kind==='global') {
-    const transformed=own.map(e=>id==='DELTA'?safeDerivative(safeDerivative(e)):safeDerivative(e));
+    const transformed=own.map(e=>simplify(id==='DELTA'?safeDerivative(safeDerivative(e)):safeDerivative(e)));
     own.splice(0,own.length,...transformed);
     info=`場全体を${id==='DELTA'?'2階':'1階'}微分`;
   } else {
     const before=display(own[move.target]);
     const partner=card.kind==='binary'?fromCard(s.hands[actor][move.partnerIndex]):null;
-    let after=opSingle(id,own[move.target],move,partner);
+    let after=simplify(opSingle(id,own[move.target],move,partner));
     if(!after || expressionSize(after)>MAX_EXPRESSION_SIZE || display(after).length>MAX_DISPLAY_LENGTH)throw new Unsupported('この式は巨大なため安全上制限しています。カード交換も利用できます');
     own[move.target]=after;
     info=`${before} → ${display(after)}`;
@@ -230,7 +243,7 @@ function scoreMove(state,move,after,difficulty) {
 export function chooseComMove(s) {
   // Search both players for every card instead of exhausting the first cards.
   // Preview results are reused for scoring, avoiding duplicate CAS work.
-  const moves=legalMoves(s,{limit:350,perCardOwner:24,includeState:true});
+  const moves=legalMoves(s,{limit:150,perCardOwner:10,includeState:true});
   if(!moves.length)return null;
   let best=moves[0],bestScore=-Infinity;
   for(const move of moves){

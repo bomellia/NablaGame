@@ -1,7 +1,8 @@
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.6';
-export * from './symbolic.js?v=0.6';
+import * as base from './symbolic.js?v=0.7';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.7';
+export * from './symbolic.js?v=0.7';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -152,18 +153,117 @@ function specialAntiderivative(e){
  }
  return null;
 }
+
+// Named elementary antiderivatives and simple substitution/integration by parts.
+// Unsupported inputs raise Unsupported; no unevaluated integral is admitted.
+function linearArgument(u){
+ const v=base.linearForm(u);
+ if(!v||[...v.keys()].some(k=>k!=='1'&&k!=='x'))return null;
+ const a=v.get('x')||0,b=v.get('1')||0;
+ return Math.abs(a)>1e-9?{a,b}:null;
+}
+function elementaryFunctionPrimitive(name,u){
+ switch(name){
+  case 'exp':return f('exp',u);
+  case 'sin':return neg(f('cos',u));
+  case 'cos':return f('sin',u);
+  case 'sinh':return f('cosh',u);
+  case 'cosh':return f('sinh',u);
+  case 'tan':return neg(f('logabs',f('cos',u)));
+  case 'cot':return f('logabs',f('sin',u));
+  case 'sec':return f('logabs',add(f('sec',u),f('tan',u)));
+  case 'csc':return f('logabs',add(f('csc',u),neg(f('cot',u))));
+  case 'tanh':return f('log',f('cosh',u));
+  case 'log':case 'logabs':return add(mul(u,f(name,u)),neg(u));
+ }
+ return null;
+}
+function powerOfX(e){
+ if(e.t==='x')return 1;
+ if(e.t==='p'&&e.b.t==='x'&&Number.isInteger(e.e)&&e.e>=0&&e.e<=7)return e.e;
+ return null;
+}
+function integratePolynomialTimes(fnName,k,power){
+ if(power===0){const primitive=elementaryFunctionPrimitive(fnName,mul(n(k),X()));return primitive&&mul(n(1/k),primitive);}
+ const u=mul(n(k),X()),term=pow(X(),power);
+ // Recurrences by integration by parts.
+ if(fnName==='exp')return add(mul(term,f('exp',u),n(1/k)),neg(mul(n(power/k),integratePolynomialTimes(fnName,k,power-1))));
+ if(fnName==='sin')return add(neg(mul(term,f('cos',u),n(1/k))),mul(n(power/k),integratePolynomialTimes('cos',k,power-1)));
+ if(fnName==='cos')return add(mul(term,f('sin',u),n(1/k)),neg(mul(n(power/k),integratePolynomialTimes('sin',k,power-1))));
+ return null;
+}
+function pairPrimitive(e){
+ if(e.t!=='m')return null;
+ const factors=[...e.v];
+ // ∫ x^n exp(kx), x^n sin(kx), x^n cos(kx) by repeated parts.
+ if(factors.length===2){
+  const q=factors.find(v=>v.t==='f'&&['exp','sin','cos'].includes(v.f));
+  if(q){const other=factors.find(v=>v!==q),p=powerOfX(other),lin=linearArgument(q.arg);
+   if(p!==null&&lin&&Math.abs(lin.b)<1e-9&&p<=6)return integratePolynomialTimes(q.f,lin.a,p);
+  }
+ }
+ // ∫ u' F(u) dx, with a constant multiplier, where F has a primitive.
+ for(const candidate of factors){
+  if(candidate.t!=='f')continue;
+  const primitive=elementaryFunctionPrimitive(candidate.f,candidate.arg);
+  if(!primitive)continue;
+  let du;
+  try{du=simplify(derivative(candidate.arg));}catch{continue;}
+  if(du.t==='n'&&Math.abs(du.v)<1e-9)continue;
+  const rest=mul(...factors.filter(v=>v!==candidate));
+  try{
+   const ratio=simplify(div(rest,du));
+   if(ratio.t==='n'&&Number.isFinite(ratio.v))return mul(ratio,primitive);
+  }catch{}
+ }
+ // ∫ u'/u dx = log|u|, including e.g. cos(x)/sin(x).
+ for(const factor of factors){
+  if(factor.t!=='p'||factor.e!==-1)continue;
+  const u=factor.b;
+  let du;try{du=simplify(derivative(u));}catch{continue;}
+  const rest=mul(...factors.filter(v=>v!==factor));
+  try{const ratio=simplify(div(rest,du));
+    if(ratio.t==='n'&&Number.isFinite(ratio.v))return mul(ratio,f('logabs',u));
+  }catch{}
+ }
+ return null;
+}
+function elementaryPowerPrimitive(e){
+ if(e.t==='p'&&e.b?.t==='f'&&e.e===2&&e.b.arg.t==='x'){
+  const u=X();
+  if(e.b.f==='sin')return add(mul(n(.5),u),neg(mul(n(.25),f('sin',mul(n(2),u)))));
+  if(e.b.f==='cos')return add(mul(n(.5),u),mul(n(.25),f('sin',mul(n(2),u))));
+  if(e.b.f==='sec')return f('tan',u);
+  if(e.b.f==='tan')return add(f('tan',u),neg(u));
+ }
+ // (ax+b)^p via substitution, including 1/(ax+b).
+ if(e.t==='p'&&Number.isInteger(e.e)&&e.e>=-8&&e.e<=8){
+  const lin=linearArgument(e.b);if(lin){
+   if(e.e===-1)return mul(n(1/lin.a),f('logabs',e.b));
+   return mul(n(1/(lin.a*(e.e+1))),pow(e.b,e.e+1));
+  }
+ }
+ return null;
+}
+
 function integralInner(e){
+ const elementary=elementaryPowerPrimitive(e);if(elementary)return elementary;
+ const paired=pairPrimitive(e);if(paired)return paired;
  const special=specialAntiderivative(e);if(special)return special;
  // Derivatives of tan and cot provide elementary antiderivatives of sec² and csc².
  if(e.t==='p'&&e.e===-2&&e.b?.t==='f'&&e.b.arg?.t==='x'){
   if(e.b.f==='cos')return f('tan',X());
   if(e.b.f==='sin')return neg(f('cot',X()));
  }
- if(e.t==='I')return antiderivative(e.arg,(e.order||1)+1);
+ if(e.t==='I')throw new base.Unsupported('未評価の積分を積み重ねる操作は許可されません');
  if(e.t==='D')return (e.order||1)===1?e.arg:{t:'D',arg:e.arg,order:e.order-1};
- if(e.t==='L')return mul(e,X());
+ if(e.t==='L')throw new base.Unsupported('未評価の極限式は積分できません');
  if(e.t==='a')return add(...e.v.map(integralInner));
  if(e.t==='m'&&e.v[0].t==='n')return mul(e.v[0],integralInner(mul(...e.v.slice(1))));
+ if(e.t==='f'){
+   const a=linearArgument(e.arg),primitive=elementaryFunctionPrimitive(e.f,e.arg);
+   if(a&&primitive)return mul(n(1/a.a),primitive);
+ }
  if(e.t==='f'&&e.arg.t!=='x'){
    const k=slope(e.arg),lm=base.linearForm(e.arg);
    if(k!==null&&lm){
@@ -181,19 +281,79 @@ function integralInner(e){
    if(e.f==='sinh')return f('cosh',X());
    if(e.f==='cosh')return f('sinh',X());
  }
- try{return base.integrate(e,0);}catch(error){if(error instanceof base.Unsupported||error instanceof RangeError)return antiderivative(e);throw error;}
+ try{return base.integrate(e,0);}catch(error){if(error instanceof base.Unsupported||error instanceof RangeError)throw new base.Unsupported('この積分は対応済みの初等関数・特殊関数で表せません');throw error;}
 }
-export const integrate=(e,C=0)=>add(integralInner(e),n(C));
+// Only explicit closed forms are legal. No formal I nodes are ever added to a field.
+export function integrate(e,C=0){
+ const integrand=simplify(e);
+ const value=integralInner(integrand);
+ if(containsFormal(value))throw new base.Unsupported('未評価の積分式は場に追加できません');
+ return simplify(add(value,n(C)));
+}
+function containsFormal(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&containsFormal(e.arg)||e.b&&containsFormal(e.b)||Array.isArray(e.v)&&e.v.some(containsFormal));}
+
+function normalized(e){
+ let current=e;
+ for(let i=0;i<3;i++){
+   const revised=rationalNormalize(trigNormalize(current));
+   if(base.sig(revised)===base.sig(current))break;
+   current=revised;
+ }
+ return current;
+}
+// For dependence proofs, any *identical normalized subexpression* can serve as
+// an atom. Unknown identities are never guessed, but multiples and sums match.
+function linearTerms(e){
+ if(e.t==='n')return new Map([['#1',e.v]]);
+ if(e.t==='a'){
+   const values=new Map();
+   for(const term of e.v)for(const [k,v] of linearTerms(term))values.set(k,(values.get(k)||0)+v);
+   return values;
+ }
+ if(e.t==='m'&&e.v[0]?.t==='n'){
+   const inner=e.v.length===2?e.v[1]:base.mul(...e.v.slice(1));
+   return new Map([...linearTerms(inner)].map(([k,v])=>[k,v*e.v[0].v]));
+ }
+ return new Map([[base.sig(e),1]]);
+}
+function vectorRank(vectors){
+ const keys=[...new Set(vectors.flatMap(v=>[...v.keys()]))];
+ const table=vectors.map(v=>keys.map(k=>v.get(k)||0));
+ let rank=0;
+ for(let j=0;j<keys.length&&rank<table.length;j++){
+  let pivot=rank;
+  for(let i=rank+1;i<table.length;i++)if(Math.abs(table[i][j])>Math.abs(table[pivot][j]))pivot=i;
+  if(Math.abs(table[pivot][j])<1e-8)continue;
+  [table[rank],table[pivot]]=[table[pivot],table[rank]];
+  const denom=table[rank][j];for(let k=j;k<keys.length;k++)table[rank][k]/=denom;
+  for(let i=rank+1;i<table.length;i++){
+   const ratio=table[i][j];for(let k=j;k<keys.length;k++)table[i][k]-=ratio*table[rank][k];
+  }
+  rank++;
+ }
+ return rank;
+}
+export function reduceBasis(board){
+ const kept=[],removed=[],vectors=[];
+ for(let i=0;i<board.length;i++){
+   const e=simplify(board[i]);
+   if(e.t==='n'&&Math.abs(e.v)<1e-9){removed.push(i);continue;}
+   const v=linearTerms(e);
+   if(vectorRank([...vectors,v])===vectorRank(vectors)){removed.push(i);continue;}
+   kept.push(e);vectors.push(v);
+ }
+ return {kept,removed};
+}
 export function simplify(e){
  if(!e||typeof e!=='object')throw new base.Unsupported('式データが破損しています');
  switch(e.t){
   case 'I':return antiderivative(simplify(e.arg),e.order||1);
   case 'D':return {t:'D',arg:simplify(e.arg),order:e.order||1};
   case 'L':return formalLimit(simplify(e.arg),e.point,e.side,e.kind||'lim');
-  case 'a':return add(...e.v.map(simplify));
-  case 'm':return mul(...e.v.map(simplify));
-  case 'p':return pow(simplify(e.b),e.e);
-  case 'f':return f(e.f,simplify(e.arg));
+  case 'a':return normalized(add(...e.v.map(simplify)));
+  case 'm':return normalized(mul(...e.v.map(simplify)));
+  case 'p':return normalized(pow(simplify(e.b),e.e));
+  case 'f':return normalized(f(e.f,simplify(e.arg)));
   default:return base.simplify(e);
  }
 }
@@ -211,7 +371,8 @@ export function substituteNegX(e){
 }
 const pretty=base.display;
 export function display(e,wrap=false){
- if(!independent(e))return pretty(e,wrap);
+ // Sum display follows descending degree even for plain elementary functions.
+ if(!independent(e)&&e.t!=='a'&&e.t!=='m'&&e.t!=='p'&&e.t!=='f')return pretty(e,wrap);
  switch(e.t){
   case 'I':return e.order>1?`∫^${e.order}(${display(e.arg)})dx^${e.order}`:`∫(${display(e.arg)})dx`;
   case 'D':return e.order>1?`d^${e.order}/dx^${e.order}(${display(e.arg)})`:`d/dx(${display(e.arg)})`;
@@ -220,7 +381,7 @@ export function display(e,wrap=false){
    return `${e.kind||'lim'}[x→${point}](${display(e.arg)})`;
   }
   case 'n':case 'x':return pretty(e,wrap);
-  case 'a':return `${wrap?'(' : ''}${e.v.map(v=>display(v)).join(' + ').replace(/\+ -/g,'− ')}${wrap?')':''}`;
+  case 'a':return `${wrap?'(' : ''}${orderedTerms(e.v).map(v=>display(v)).join(' + ').replace(/\+ -/g,'− ')}${wrap?')':''}`;
   case 'm':return e.v.map((v,i)=>display(v,i>0)).join('·');
   case 'p':return `${display(e.b,true)}^${e.e}`;
   case 'f':{

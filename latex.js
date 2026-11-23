@@ -1,3 +1,4 @@
+import {orderedTerms} from './normalization.js?v=0.7';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -53,7 +54,7 @@ export function toLatex(e){
  switch(e.t){
   case 'n':return numberLatex(e.v);
   case 'x':return 'x';
-  case 'a':return sumTerms(e.v);
+  case 'a':return sumTerms(orderedTerms(e.v));
   case 'm':return productLatex(e.v);
   case 'p':{
    if(e.e===1)return toLatex(e.b);
