@@ -1,11 +1,12 @@
-import {newGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.2';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.2';
 const $=id=>document.getElementById(id);
 let game;
 let selection={cardIndex:0,owner:1,target:0,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard'};
 let thinking=false;
 let gameSerial=0;
 function escapeHtml(v) {return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function containsFormal(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&containsFormal(e.arg)||e.b&&containsFormal(e.b)||Array.isArray(e.v)&&e.v.some(containsFormal));}
 function selectedCard() {return game?.hands[0][selection.cardIndex]||null;}
 function currentMove() {
   const cardId=selectedCard(); if(!cardId) return null;
@@ -20,7 +21,7 @@ function save() {
 function load() {
   try {
     const s=JSON.parse(localStorage.getItem('basis-duel-save'));
-    if(s&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return s;
+    if(s&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
   }catch{}
   return null;
 }
@@ -34,7 +35,7 @@ function start() {
 function fieldMarkup(owner) {
   const isEnemy=owner===1, name=isEnemy?'COM':'あなた', board=game.boards[owner];
   const fieldTarget=selection.owner===owner;
-  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}</span><span class="formula">${escapeHtml(display(e))}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
+  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${escapeHtml(display(e))}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
   return `<div class="field-head"><div class="person"><div class="avatar">${isEnemy?'C':'P'}</div><div><div class="person-name">${name}</div><div class="person-sub">${isEnemy?'COMPUTER OPPONENT':'PLAYER · YOU'}</div></div></div><div class="dimension"><strong>${board.length}</strong> 次元</div></div><div class="bases">${bases}</div>`;
 }
 function syncSelection() {
@@ -69,8 +70,8 @@ function actionMarkup() {
   }
   if(card.kind==='constant')opts+=`<label class="input-group">${id==='INTEGRATE'?'積分定数':'加算する定数'} C<select id="constant-select">${CONSTANTS.filter(c=>id!=='PLUS_C'||c!==0).map(c=>`<option value="${c}" ${selection.C===c?'selected':''}>${c}</option>`).join('')}</select></label>`;
   if(card.kind==='limitZero')opts+=`<label class="input-group">極限の方向<select id="side-select"><option value="two" ${selection.side==='two'?'selected':''}>両側</option><option value="plus" ${selection.side==='plus'?'selected':''}>右側（+0）</option><option value="minus" ${selection.side==='minus'?'selected':''}>左側（−0）</option></select></label>`;
-  const summary=result.ok?`操作可能。次元の変化：あなた ${result.delta[0]>0?'+':''}${result.delta[0]} / COM ${result.delta[1]>0?'+':''}${result.delta[1]}`:result.reason;
-  return `<div class="action-header"><div><div class="action-title">${escapeHtml(card.label)} を使用</div><div class="action-desc">${escapeHtml(card.description)}</div></div><div class="action-target">対象：${escapeHtml(targetText)}</div></div><div class="action-row">${opts}<div class="preview ${result.ok?'':'invalid'}" role="status">${escapeHtml(summary)}</div><button class="hint-button" id="hint-btn" type="button">合法手を提案</button><button id="act-btn" class="act-button" type="button" ${result.ok?'':'disabled'}>操作する</button></div>`;
+  const summary=result.ok?`操作可能。次元の変化：あなた ${result.delta[0]>0?'+':''}${result.delta[0]} / COM ${result.delta[1]>0?'+':''}${result.delta[1]}${result.state.boards.some(board=>board.some(containsFormal))?'（未評価の式を含む）':''}`:result.reason;
+  return `<div class="swap-note">現在の手で計算しづらいときは、カードを1枚交換できます（ターン消費）。</div><div class="action-header"><div><div class="action-title">${escapeHtml(card.label)} を使用</div><div class="action-desc">${escapeHtml(card.description)}</div></div><div class="action-target">対象：${escapeHtml(targetText)}</div></div><div class="action-row">${opts}<div class="preview ${result.ok?'':'invalid'}" role="status">${escapeHtml(summary)}</div><button class="hint-button" id="hint-btn" type="button">合法手を提案</button><button class="hint-button swap-button" id="swap-btn" type="button" ${game.deck.length?'':'disabled'}>選択中のカードを交換</button><button id="act-btn" class="act-button" type="button" ${result.ok?'':'disabled'}>操作する</button></div>`;
 }
 function render() {
   syncSelection();
@@ -126,6 +127,7 @@ function handleClick(e){
   if(elem.dataset.owner!==undefined){selection.owner=Number(elem.dataset.owner);selection.target=Number(elem.dataset.index);render();return;}
   if(elem.id==='act-btn'){const move=currentMove();if(move)takeTurn(move);}
   if(elem.id==='hint-btn')hint();
+  if(elem.id==='swap-btn'&&game.deck.length)takeTurn({discard:true,cardIndex:selection.cardIndex});
   if(elem.id==='restart-btn'||elem.id==='new-btn'){
     if(elem.id==='new-btn'&&!game.finished&&!confirm('対戦を最初からやり直しますか？'))return;
     start();
