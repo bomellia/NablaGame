@@ -173,3 +173,10 @@ main{display:flex;flex-direction:column;gap:9px}
 @media(max-width:650px){.field-pick{font-size:10px;min-height:21px;padding:1px 5px}.flow-steps{font-size:10px;gap:3px}.flow-steps span{padding:2px}.flow-body .action-title{font-size:13px}.flow-body .preview{font-size:11px}.action-buttons .hint-button{padding:0 7px;font-size:11px}.action-buttons .act-button{font-size:13px}.selected-formula{font-size:15px}.preview-stage .action-panel{grid-template-rows:min-content minmax(0,1fr) 30px}}
 
 .effect-formula{display:block;white-space:nowrap;overflow-x:auto;min-height:24px;font-size:16px;padding:3px 0;color:#e6f0ff}.effect-formula>span,.effect-formula>small{font-size:11px;color:#9fb7d6;margin-right:5px}
+
+/* v0.11.1: the confirmation footer must never overflow the single-screen grid. */
+.action-buttons.confirm-actions{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,2fr)!important;grid-template-rows:minmax(0,1fr);gap:6px;align-items:stretch;width:100%;min-width:0}
+.action-buttons.confirm-actions>button{width:100%;min-width:0!important;margin:0;white-space:nowrap}
+.field.field-selectable{cursor:pointer;border-color:#77a9dc;box-shadow:inset 0 0 0 1px #77a9dc55;touch-action:pan-x}
+.field.opponent.field-selectable{border-color:#c49be9;box-shadow:inset 0 0 0 1px #c49be955}
+.field-selectable .basis,.field-selectable .field-pick{cursor:pointer}
