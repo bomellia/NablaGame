@@ -1,210 +1,69 @@
-import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.10';
-import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.10';
-import {toLatex,cardLatex,mathMarkup} from './latex.js?v=0.10';
+import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display} from './engine.js?v=0.11';
+import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.11';
+import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.11';
 const $=id=>document.getElementById(id);
-const formulaHtml=e=>mathMarkup(toLatex(e),display(e));
-const cardHtml=id=>mathMarkup(cardLatex(id),getCard(id).label);
-let game;
-let selection={cardIndex:0,owner:1,target:0,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard'};
-let thinking=false;
-let gameSerial=0;
-function escapeHtml(v) {return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function containsFormal(e){return !!e&&(['I','D','L'].includes(e.t)||e.arg&&containsFormal(e.arg)||e.b&&containsFormal(e.b)||Array.isArray(e.v)&&e.v.some(containsFormal));}
-function selectedCard() {return game?.hands[0][selection.cardIndex]||null;}
-function currentMove() {
-  const cardId=selectedCard(); if(!cardId) return null;
-  const card=getCard(cardId);
-  return {cardIndex:selection.cardIndex,owner:selection.owner,
-    target:card.kind==='function'||card.kind==='global'?null:selection.target,
-    partnerIndex:selection.partnerIndex, C:selection.C,side:selection.side,direction:selection.direction};
+const formula=e=>mathMarkup(toLatex(e),display(e));
+const card=id=>mathMarkup(cardLatex(id),getCard(id).label);
+const name=o=>o===1?'COM':'あなた';
+const fresh=()=>({cardIndex:-1,owner:null,target:null,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard',operands:[]});
+let game,selection=fresh(),thinking=false,gameSerial=0,comWorker=null,comScene=null,lastScene=null,message='',cached=null;
+const playerActive=()=>game.turn===0&&!game.finished&&!thinking;
+const currentCard=()=>getCard(game.hands[0][selection.cardIndex]);
+const isBinary=()=>currentCard()?.kind==='binary';
+function currentMove(){
+ const c=currentCard();if(!c||selection.owner===null)return null;
+ if(!['function','global'].includes(c.kind)&&selection.target===null)return null;
+ if(c.kind==='binary'&&selection.operands.length!==2)return null;
+ return {cardIndex:selection.cardIndex,owner:selection.owner,target:['function','global'].includes(c.kind)?null:selection.target,partnerIndex:selection.partnerIndex,C:selection.C,side:selection.side,direction:selection.direction};
 }
-function save() {
-  try {localStorage.setItem('basis-duel-save-v8',JSON.stringify(game));}catch{}
+function resultFor(move){if(!move)return null;const key=JSON.stringify(move);if(cached?.game===game&&cached.key===key)return cached.result;const result=preview(game,move);cached={game,key,result};return result;}
+function save(){try{localStorage.setItem('basis-duel-save-v8',JSON.stringify(game));}catch{}}
+function load(){try{const s=JSON.parse(localStorage.getItem('basis-duel-save-v8')||localStorage.getItem('basis-duel-save-v7'));if(s&&[7,8].includes(s.version)&&s.boards?.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck))return normalizeGame(s);}catch{}return null;}
+function start(){gameSerial++;if(comWorker){comWorker.terminate();comWorker=null;}thinking=false;comScene=null;lastScene=null;selection=fresh();message='';cached=null;game=newGame({extended:$('extended').checked,difficulty:$('difficulty').value});save();render();}
+function isFieldCard(c){return c&&['function','global'].includes(c.kind);}
+function fieldMarkup(owner){
+ const board=game.boards[owner],c=currentCard(),active=playerActive(),fieldMode=active&&isFieldCard(c);
+ const marked=comScene?.stage>=2&&comScene.move?.owner===owner;
+ const selected=(i)=>active&&selection.owner===owner&&selection.target===i || marked&&comScene.move?.target===i;
+ return `<div class="field-head"><div class="person"><div class="avatar">${owner?'C':'P'}</div><div><div class="person-name">${name(owner)}</div><div class="person-sub">${owner?'COMPUTER OPPONENT':'PLAYER · YOU'}</div></div></div>${fieldMode?`<button class="field-pick" data-field="${owner}" type="button">この場を選択</button>`:''}<div class="dimension"><strong>${board.length}</strong> 次元</div></div><div class="bases ${marked&&comScene.move.target==null?'com-field-target':''}">${board.length?board.map((e,i)=>`<button type="button" class="basis ${selected(i)?'selected':''} ${marked&&comScene.move.target===i?'com-target':''}" data-owner="${owner}" data-index="${i}" aria-label="${name(owner)}の基底 ${i+1} ${esc(display(e))}" ${thinking?'disabled':''}><span class="index">BASIS ${String(i+1).padStart(2,'0')}${active&&isBinary()&&selected(i)?` · ${selection.operands.findIndex(z=>z.kind==='basis')+1}`:''}</span><span class="formula">${display(e).length>24?mathMarkup('f(x)','f(x)'):formula(e)}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>'}</div>`;
 }
-function load() {
-  try {
-    const s=JSON.parse(localStorage.getItem('basis-duel-save-v8')||localStorage.getItem('basis-duel-save-v7'));
-    if(s&&(s.version===7||s.version===8)&&Array.isArray(s.boards)&&s.boards.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&Number.isInteger(s.turn))return normalizeGame(s);
-  }catch{}
-  return null;
+function handMarkup(){return game.hands[0].map((id,i)=>{const c=getCard(id),material=isBinary()&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(id),order=selection.operands.findIndex(z=>z.kind==='hand'&&z.index===i);return `<button type="button" ${playerActive()?'':'disabled'} class="card ${esc(c.kind)} ${c.expansion?'expansion':''} ${selection.cardIndex===i||order>=0?'selected':''} ${material?'operand-choice':''}" data-card="${i}" title="${esc(c.description)}"><span class="card-type">${c.expansion?'拡張':c.kind==='function'?'関数':c.kind==='global'?'全体演算':'演算'}</span><span class="card-symbol">${card(id)}</span><span class="card-number">${order>=0?`項 ${order+1}`:`CARD ${i+1}`}</span></button>`;}).join('');}
+function operandsHtml(state,move){const id=state.hands[state.turn][move.cardIndex];const c=getCard(id);if(move.discard)return card(id);if(c.kind==='binary'){const a=formula(state.boards[move.owner][move.target]),b=card(state.hands[state.turn][move.partnerIndex]);return `${move.direction==='cardOverBasis'?b:a} <span class="op-sign">${card(id)}</span> ${move.direction==='cardOverBasis'?a:b}`;}if(isFieldCard(c))return `${card(id)} <span class="op-sign">→</span> ${name(move.owner)}の場`;return `${card(id)} <span class="op-sign">→</span> ${formula(state.boards[move.owner][move.target])}`;}
+function binarySelectionHtml(){const c=currentCard();const vals=selection.operands.map(z=>z.kind==='hand'?card(game.hands[0][z.index]):formula(game.boards[z.owner][z.index]));return `${vals[0]||'<span class="operand-slot">左の式</span>'} <span class="op-sign">${card(c.id)}</span> ${vals[1]||'<span class="operand-slot">右の式</span>'}`;}
+function showFormula(owner,index){const e=game.boards[owner][index];if(!e)return;$('formula-title').textContent=`${name(owner)} 基底 ${index+1}`;$('formula-body').innerHTML=formula(e);$('formula-dialog').showModal();}
+function optionsHtml(c){let s='';if(c.kind==='constant')s+=`<label class="input-group">${c.id==='INTEGRATE'?'積分定数':'定数'} C <select id="constant-select">${CONSTANTS.filter(v=>c.id!=='PLUS_C'||v!==0).map(v=>`<option value="${v}" ${v===selection.C?'selected':''}>${v}</option>`).join('')}</select></label>`;if(c.kind==='limitZero')s+=`<label class="input-group">極限の向き <select id="side-select"><option value="two" ${selection.side==='two'?'selected':''}>両側</option><option value="plus" ${selection.side==='plus'?'selected':''}>右側（+0）</option><option value="minus" ${selection.side==='minus'?'selected':''}>左側（−0）</option></select></label>`;return s;}
+function effectHtml(result){const list=result?.effect?.result;if(!list?.length)return "";return `<div class="effect-formula"><span>結果</span> ${list.map(formula).join(" , ")}${result.effect.erased?` <small>（${result.effect.erased}基底消滅）</small>`:""}</div>`;}
+function deltaText(result){return `次元の変化：あなた ${result.delta[0]>0?'+':''}${result.delta[0]} / COM ${result.delta[1]>0?'+':''}${result.delta[1]}`;}
+function actionMarkup(){
+ if(game.finished)return `<div class="result">${game.winner===-1?'引き分け':game.winner===0?'あなたの勝利':'COMの勝利'}</div><button class="act-button" id="restart-btn" type="button">もう一度対戦</button>`;
+ if(thinking||game.turn===1){const scene=comScene;return `<div class="flow-steps"><span class="${scene?.stage>=1?'done':''}">1 カード</span><span class="${scene?.stage>=2?'done':''}">2 対象</span><span class="${scene?.stage>=3?'done':''}">3 実行</span></div><div class="flow-body" role="status">${scene?esc(scene.stage===1?'COMがカードを選択':scene.stage===2?'COMが対象を選択':scene.result?.description||'COMが操作を実行'):'COMが次の手を計算しています'}${scene?.stage===3?effectHtml(scene.result):''}</div><div class="action-buttons"><button class="hint-button" id="skip-com" ${scene?'':'disabled'}>演出をスキップ</button></div>`;}
+ const c=currentCard(),move=currentMove(),result=resultFor(move);
+ let title='手札からカードを選択',body='基底をタップすると数式の全文を表示します。',opts='';
+ if(c){opts=optionsHtml(c);if(c.kind==='binary'){title=selection.operands.length===2?'式を確認して実行':selection.operands.length===1?'右の式を選択':'左の式を選択';body=selection.operands.length===2?(result?.ok?deltaText(result):result?.reason||''):'場の基底1枚と手札の関数カード1枚を、式の左から順にタップしてください。';}else{title=isFieldCard(c)?'対象の場を選択':'対象の基底を選択';body=result&&!result.ok?result.reason:'対象をタップすると操作を実行します。';}}
+ if(message)body=message;
+ return `<div class="flow-steps"><span class="${c?'done':'current'}">1 カード</span><span class="${c&&(!move)?'current':move?'done':''}">2 ${c?.kind==='binary'?'式の選択':'対象'}</span>${c?.kind==='binary'?`<span class="${move?'current':''}">3 確認</span>`:''}</div><div class="flow-body"><div class="action-title">${esc(title)}</div>${opts}${move&&c?.kind==='binary'&&result?.ok?effectHtml(result):''}<div class="preview ${result&&!result.ok?'invalid':''}" role="status">${esc(body)}</div>${lastScene&&!c?`<div class="last-result">${esc(lastScene)}</div>`:''}</div><div class="action-buttons"><button id="hint-btn" class="hint-button" type="button">提案</button><button id="swap-btn" class="hint-button swap-button" type="button" ${c&&game.deck.length?'':'disabled'}>交換</button>${c?`<button id="cancel-btn" class="hint-button" type="button">取消</button>`:''}${c?.kind==='binary'&&move?`<button id="act-btn" class="act-button" ${result?.ok?'':'disabled'} type="button">確定</button>`:''}${c&&!isFieldCard(c)&&selection.target!==null?`<button id="inspect-btn" class="hint-button" type="button">式詳細</button>`:''}</div>`;
 }
-function start() {
-  gameSerial++;
-  if(comWorker){comWorker.terminate();comWorker=null;}
-  thinking=false;
-  game=newGame({extended:$('extended').checked,difficulty:$('difficulty').value});
-  selection={cardIndex:0,owner:1,target:0,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard'};
-  save();render();
+function render(){
+ const scroll=['opponent','player','hand'].map(k=>{const e=k==='hand'?$(k):$(k).querySelector('.bases');return e?.scrollLeft||0;});
+ $('opponent').className='field opponent';$('player').className='field';$('opponent').innerHTML=fieldMarkup(1);$('player').innerHTML=fieldMarkup(0);$('hand').innerHTML=handMarkup();
+ const c=currentCard(),active=selection.owner===null||selection.target===null?null:game.boards[selection.owner]?.[selection.target];
+ $('selected-card').innerHTML=thinking&&comScene?.move?card(comScene.state.hands[1][comScene.move.cardIndex]):c?card(c.id):'—';
+ $('selected-label').textContent=thinking?'COMの操作':active?`${name(selection.owner)} · 基底 ${selection.target+1}`:c?'カード選択中':'選択プレビュー';
+ $('selected-formula').innerHTML=thinking&&comScene?.stage>=2?operandsHtml(comScene.state,comScene.move):thinking&&comScene?.move?card(comScene.state.hands[1][comScene.move.cardIndex]):thinking?'考え中…':isBinary()?binarySelectionHtml():active?formula(active):c?esc(c.description):lastScene?esc(lastScene):'カードを選択してください';
+ $('action-panel').innerHTML=actionMarkup();$('hand-count').textContent=`${game.hands[0].length}枚`;$('deck-count').textContent=`山札 ${game.deck.length} 枚`;$('deck-mini').textContent=`山札 ${game.deck.length}`;$('turn-indicator').textContent=game.finished?'対戦終了':game.turn===0?'あなたのターン':'COMのターン';$('turn-indicator').classList.toggle('busy',game.turn===1&&!game.finished);$('event-text').textContent=game.log[0]||'';$('log').innerHTML=game.log.slice(0,8).map(t=>`<div class="log-item">${esc(t)}</div>`).join('');$('log-mobile').innerHTML=game.log.map(t=>`<div class="log-item">${esc(t)}</div>`).join('');
+ ['opponent','player','hand'].forEach((k,i)=>{const e=k==='hand'?$(k):$(k).querySelector('.bases');if(e)e.scrollLeft=scroll[i];});if(thinking&&comScene?.stage===2&&comScene.move?.target!=null){const e=$(comScene.move.owner===1?'opponent':'player').querySelector('.com-target');e?.scrollIntoView({block:'nearest',inline:'nearest'});}
 }
-function fieldMarkup(owner) {
-  const isEnemy=owner===1, name=isEnemy?'COM':'あなた', board=game.boards[owner];
-  const fieldTarget=selection.owner===owner;
-  const bases=board.length?board.map((e,i)=>`<button type="button" class="basis ${fieldTarget&&selection.target===i?'selected':''}" data-owner="${owner}" data-index="${i}" ${game.turn!==0||game.finished||thinking?'disabled':''} aria-label="${name}の基底 ${i+1} ${escapeHtml(display(e))}"><span class="index">BASIS ${String(i+1).padStart(2,'0')}${containsFormal(e)?' · 未評価':''}</span><span class="formula">${display(e).length>24?mathMarkup("f(x)","f(x)"):formulaHtml(e)}</span></button>`).join(''):'<div class="basis-empty">基底なし（0次元）</div>';
-  return `<div class="field-head"><div class="person"><div class="avatar">${isEnemy?'C':'P'}</div><div><div class="person-name">${name}</div><div class="person-sub">${isEnemy?'COMPUTER OPPONENT':'PLAYER · YOU'}</div></div></div><div class="dimension"><strong>${board.length}</strong> 次元</div></div><div class="bases">${bases}</div>`;
+function takeTurn(move,result=resultFor(move)){if(!result?.ok){message=result?.reason||'操作できません';render();return;}game=result.state;selection=fresh();message='';lastScene=null;cached=null;save();render();runCom();}
+function chooseCard(i){selection=fresh();selection.cardIndex=i;selection.C=currentCard()?.id==='PLUS_C'?1:0;message='';lastScene=null;render();}
+function selectOperand(z){if(selection.operands.some(a=>a.kind===z.kind)){message='場の基底と手札の関数カードを1枚ずつ選択してください。';render();return;}if(selection.operands.length>=2)return;selection.operands.push(z);if(z.kind==='basis'){selection.owner=z.owner;selection.target=z.index;}else selection.partnerIndex=z.index;selection.direction=selection.operands[0].kind==='hand'?'cardOverBasis':'basisOverCard';message='';render();}
+function selectTarget(owner,index){if(!playerActive()){if(!thinking&&index!=null)showFormula(owner,index);return;}const c=currentCard();if(!c){if(index!=null)showFormula(owner,index);return;}if(c.kind==='binary'){if(index!=null)selectOperand({kind:'basis',owner,index});return;}if(!isFieldCard(c)&&index==null)return;selection.owner=owner;selection.target=isFieldCard(c)?null:index;message='';const move=currentMove();if(move)takeTurn(move);}
+function hint(){if(!playerActive())return;const moves=legalMoves(game,{limit:150,perCardOwner:10});const best=[...moves].filter(m=>!m.discard).sort((a,b)=>{const da=a.scoreDelta||[0,0],db=b.scoreDelta||[0,0];return(db[0]-db[1]*1.3)-(da[0]-da[1]*1.3);})[0];if(!best){message='合法手が見つかりません。カード交換を試してください。';render();return;}selection={...fresh(),...best,target:best.target??null};if(currentCard().kind==='binary'){const a={kind:'basis',owner:best.owner,index:best.target},b={kind:'hand',index:best.partnerIndex};selection.operands=best.direction==='cardOverBasis'?[b,a]:[a,b];}else{message='提案した対象をタップすると実行します。';}render();}
+function runCom(){if(game.finished||game.turn!==1)return;const serial=gameSerial;thinking=true;comScene=null;render();let ended=false,watchdog,worker;
+ const valid=()=>serial===gameSerial&&game.turn===1&&!game.finished;
+ const finishScene=()=>{if(!valid()||!comScene)return;const scene=comScene;comScene=null;thinking=false;game=scene.result.state;lastScene=scene.result.description;selection=fresh();message='';cached=null;save();render();};
+ const show=(move)=>{if(ended)return;ended=true;clearTimeout(watchdog);if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}if(!valid())return;let result;try{result=move?preview(game,move):null;if(!result?.ok){move={discard:true,cardIndex:0};result=preview(game,move);}}catch{}if(!result?.ok){thinking=false;game.log.unshift('COMの操作を確定できません。新規対戦を開始してください。');render();return;}const scene={state:game,move,result,stage:1,finish:finishScene};comScene=scene;render();setTimeout(()=>{if(!valid()||comScene!==scene)return;scene.stage=2;render();setTimeout(()=>{if(!valid()||comScene!==scene)return;scene.stage=3;render();setTimeout(()=>{if(comScene===scene)finishScene();},800);},650);},550);};
+ try{worker=new Worker('./com-worker.js?v=0.11',{type:'module'});comWorker=worker;watchdog=setTimeout(()=>show(null),3000);worker.onmessage=e=>show(e.data?.move||null);worker.onerror=()=>show(null);worker.postMessage(game);}catch{setTimeout(()=>{if(!valid()||ended)return;let m=null;try{m=chooseComMove(game);}catch{}show(m);},80);}
 }
-function syncSelection() {
-  selection.cardIndex=Math.max(0,Math.min(selection.cardIndex,game.hands[0].length-1));
-  selection.target=Math.max(0,Math.min(selection.target,Math.max(0,game.boards[selection.owner].length-1)));
-  const c=selectedCard()&&getCard(selectedCard());
-  if(c?.id==='PLUS_C'&&selection.C===0)selection.C=1;
-  if(c?.kind==='binary'){
-    const valid=i=>i>=0&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(game.hands[0][i]);
-    if(!valid(selection.partnerIndex))selection.partnerIndex=game.hands[0].findIndex((id,i)=>valid(i));
-  }
-}
-function handMarkup() {
-  return game.hands[0].map((id,i)=>{
-    const c=getCard(id);
-    return `<button type="button" ${thinking||game.finished||game.turn!==0?'disabled':''} class="card ${escapeHtml(c.kind)} ${c.expansion?'expansion':''} ${selection.cardIndex===i?'selected':''}" data-card="${i}" title="${escapeHtml(c.description)}"><span class="card-type">${c.expansion?'拡張':c.kind==='function'?'関数':c.kind==='global'?'全体演算':'演算'}</span><span class="card-symbol">${cardHtml(id)}</span><span class="card-number">CARD ${i+1}</span></button>`;
-  }).join('');
-}
-function actionMarkup() {
-  if(game.finished){const result=game.winner===-1?'引き分け':game.winner===0?'あなたの勝利':'COMの勝利';return `<div class="result">${result} — あなた ${game.boards[0].length}次元 / COM ${game.boards[1].length}次元</div><button class="act-button" id="restart-btn" type="button">もう一度対戦</button>`;}
-  if(game.turn!==0||thinking)return `<div class="action-title">COMが次の操作を選択しています</div><div class="action-desc">盤面の基底とカードの組合せを評価しています。</div>`;
-  const id=selectedCard(); if(!id)return '<div class="action-desc">手札がありません</div>';
-  const card=getCard(id),move=currentMove();
-  const result=move?preview(game,move):{ok:false,reason:'カードを選択してください'};
-  const targetName=selection.owner===0?'あなた':'COM';
-  const targetText=card.kind==='global'||card.kind==='function'?`${targetName}の場`:`${targetName}の基底 ${selection.target+1}`;
-  let opts='';
-  if(card.kind==='binary') {
-    const partnerOptions=game.hands[0].map((cid,i)=>({cid,i})).filter(({cid,i})=>i!==selection.cardIndex&&FUNCTION_CARDS.includes(cid));
-    opts+=`<label class="input-group">材料となる関数カード<select id="partner-select">${partnerOptions.length?partnerOptions.map(({cid,i})=>`<option value="${i}" ${selection.partnerIndex===i?'selected':''}>${escapeHtml(getCard(cid).label)}（手札${i+1}）</option>`).join(''):'<option value="-1">なし</option>'}</select></label>`;
-    if(id==='DIV')opts+=`<label class="input-group">割り算の向き<select id="direction-select"><option value="basisOverCard" ${selection.direction==='basisOverCard'?'selected':''}>基底 ÷ 関数</option><option value="cardOverBasis" ${selection.direction==='cardOverBasis'?'selected':''}>関数 ÷ 基底</option></select></label>`;
-  }
-  if(card.kind==='constant')opts+=`<label class="input-group">${id==='INTEGRATE'?'積分定数':'加算する定数'} C<select id="constant-select">${CONSTANTS.filter(c=>id!=='PLUS_C'||c!==0).map(c=>`<option value="${c}" ${selection.C===c?'selected':''}>${c}</option>`).join('')}</select></label>`;
-  if(card.kind==='limitZero')opts+=`<label class="input-group">極限の方向<select id="side-select"><option value="two" ${selection.side==='two'?'selected':''}>両側</option><option value="plus" ${selection.side==='plus'?'selected':''}>右側（+0）</option><option value="minus" ${selection.side==='minus'?'selected':''}>左側（−0）</option></select></label>`;
-  const summary=result.ok?`操作可能。次元の変化：あなた ${result.delta[0]>0?'+':''}${result.delta[0]} / COM ${result.delta[1]>0?'+':''}${result.delta[1]}${result.state.boards.some(board=>board.some(containsFormal))?'（未評価の式を含む）':''}`:result.reason;
-  return `<div class="action-header"><div><div class="action-title"><span class="action-symbol">${cardHtml(id)}</span> を使用</div><div class="action-desc">${escapeHtml(card.description)}</div></div><div class="action-target">${escapeHtml(targetText)}</div></div><div class="action-row"><div class="action-options">${opts}</div><div class="preview ${result.ok?'':'invalid'}" role="status" title="${escapeHtml(summary)}">${escapeHtml(summary)}</div></div><div class="action-buttons"><button class="hint-button" id="hint-btn" type="button">提案</button><button class="hint-button swap-button" id="swap-btn" type="button" ${game.deck.length?'':'disabled'}>交換</button><button id="act-btn" class="act-button" type="button" ${result.ok?'':'disabled'}>操作する</button></div>`;
-}
-function render() {
-  syncSelection();
-  $('opponent').className='field opponent'; $('player').className='field';
-  $('opponent').innerHTML=fieldMarkup(1);$('player').innerHTML=fieldMarkup(0);
-  const activeBasis=game.boards[selection.owner]?.[selection.target];
-  $('selected-card').innerHTML=selectedCard()?cardHtml(selectedCard()):'';
-  $('selected-label').textContent=activeBasis?`${selection.owner===1?'COM':'あなた'} · 基底 ${String(selection.target+1).padStart(2,'0')}`:'選択中の基底';
-  $('selected-formula').innerHTML=activeBasis?formulaHtml(activeBasis):'基底がありません';
-  $('hand').innerHTML=handMarkup();$('action-panel').innerHTML=actionMarkup();
-  $('hand-count').textContent=`${game.hands[0].length}枚`;
-  $('deck-count').textContent=`山札 ${game.deck.length} 枚`;
-  $('deck-mini').textContent=`山札 ${game.deck.length}`;
-  $('turn-indicator').textContent=game.finished?'対戦終了':game.turn===0?'あなたのターン':'COMのターン';
-  $('turn-indicator').classList.toggle('busy',game.turn===1&&!game.finished);
-  $('event-text').textContent=game.log[0];
-  $('log').innerHTML=game.log.slice(0,8).map(t=>`<div class="log-item">${escapeHtml(t)}</div>`).join('');
-  $('log-mobile').innerHTML=game.log.map(t=>`<div class="log-item">${escapeHtml(t)}</div>`).join('');
-}
-function setSelectionFromMove(move){
-  selection.cardIndex=move.cardIndex;selection.owner=move.owner;selection.target=move.target??0;
-  if(move.partnerIndex!==undefined)selection.partnerIndex=move.partnerIndex;
-  if(move.C!==undefined)selection.C=move.C;
-  if(move.side!==undefined)selection.side=move.side;
-  if(move.direction!==undefined)selection.direction=move.direction;
-}
-let comWorker=null;
-function runCom(){
-  if(game.finished||game.turn!==1)return;
-  const runningGame=gameSerial;
-  thinking=true;render();
-  // Module workers are supported by GitHub Pages and keep the main screen
-  // responsive while the COM evaluates potentially expensive symbolic moves.
-  let ended=false;
-  let watchdog=null;
-  let worker=null;
-  const finalize=(move)=>{
-    if(ended)return;
-    ended=true;
-    if(watchdog!==null)clearTimeout(watchdog);
-    if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}
-    if(runningGame!==gameSerial||game.turn!==1||game.finished)return;
-    try{
-      const candidate=move&&preview(game,move).ok?move:null;
-      // COM may give up a card on extremely complex positions instead of
-      // making the browser appear frozen indefinitely.
-      const safeMove=candidate||(game.deck.length?{discard:true,cardIndex:0}:null);
-      if(safeMove)game=applyMove(game,safeMove);
-    }catch(error){
-      if(game.deck.length)game=applyMove(game,{discard:true,cardIndex:0});
-      else game.log.unshift('COMの演算に失敗しました。対戦を再開してください。');
-    }
-    thinking=false;selection.cardIndex=0;selection.owner=1;selection.target=0;selection.partnerIndex=-1;
-    save();render();
-  };
-  try{
-    worker=new Worker('./com-worker.js?v=0.10',{type:'module'});
-    comWorker=worker;
-    watchdog=setTimeout(()=>finalize(null),3000);
-    worker.onmessage=event=>finalize(event.data?.move||null);
-    worker.onerror=()=>finalize(null);
-    worker.postMessage(game);
-  }catch{
-    // Browsers which forbid module workers retain the non-worker fallback.
-    if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}
-    setTimeout(()=>{
-      if(runningGame!==gameSerial||ended)return;
-      let move=null;
-      try{move=chooseComMove(game);}catch{}
-      finalize(move);
-    },100);
-  }
-}
-function takeTurn(move){
-  const r=preview(game,move);
-  if(!r.ok)return;
-  game=r.state;selection.cardIndex=0;selection.partnerIndex=-1;
-  save();render();runCom();
-}
-function hint(){
-  const moves=legalMoves(game,{limit:150,perCardOwner:10});
-  if(!moves.length)return;
-  const best=[...moves].sort((a,b)=>{
-    const da=a.scoreDelta||[0,0],db=b.scoreDelta||[0,0];
-    return (db[0]-db[1]*1.3)-(da[0]-da[1]*1.3);
-  })[0];
-  if(best.discard){$('event-text').textContent='有効な手がないためカード交換が必要です';takeTurn(best);return;}
-  setSelectionFromMove(best);render();
-  $('event-text').textContent='合法手を選択しました。操作内容を確認してください。';
-}
-function handleClick(e){
-  const elem=e.target.closest('button');if(!elem)return;
-  if(elem.dataset.card!==undefined) {selection.cardIndex=Number(elem.dataset.card);selection.partnerIndex=-1;selection.C=selectedCard()==='PLUS_C'?1:0;render();return;}
-  if(elem.dataset.owner!==undefined){
-    const owner=Number(elem.dataset.owner),idx=Number(elem.dataset.index);
-    if(selection.owner===owner&&selection.target===idx){
-      $('formula-title').textContent=`${owner===1?'COM':'あなた'} 基底 ${idx+1}`;
-      $('formula-body').innerHTML=formulaHtml(game.boards[owner][idx]);
-      $('formula-dialog').showModal();
-      return;
-    }
-    selection.owner=owner;selection.target=idx;render();return;
-  }
-  if(elem.id==='act-btn'){const move=currentMove();if(move)takeTurn(move);}
-  if(elem.id==='hint-btn')hint();
-  if(elem.id==='swap-btn'&&game.deck.length)takeTurn({discard:true,cardIndex:selection.cardIndex});
-  if(elem.id==='restart-btn'||elem.id==='new-btn'){
-    if(elem.id==='new-btn'&&!game.finished&&!confirm('対戦を最初からやり直しますか？'))return;
-    start();
-  }
-  if(elem.id==='help-btn')$('help-dialog').showModal();
-  if(elem.id==='settings-btn')$('settings-panel').classList.toggle('show');
-  if(elem.id==='history-btn')$('log-dialog').showModal();
-  if(elem.id==='close-log')$('log-dialog').close();
-  if(elem.id==='close-formula')$('formula-dialog').close();
-  if(elem.id==='close-help')$('help-dialog').close();
-}
-document.addEventListener('click',handleClick);
-document.addEventListener('change',e=>{
-  if(e.target.id==='partner-select')selection.partnerIndex=Number(e.target.value);
-  if(e.target.id==='constant-select')selection.C=Number(e.target.value);
-  if(e.target.id==='direction-select')selection.direction=e.target.value;
-  if(e.target.id==='side-select')selection.side=e.target.value;
-  if(['partner-select','constant-select','direction-select','side-select'].includes(e.target.id))render();
-  if(e.target.id==='difficulty') {game.difficulty=e.target.value;save();}
-});
-const prior=load();
-if(prior){game=prior;save();$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}
-else start();
-
-// Re-typeset after the deferred KaTeX script loads (fallback stays readable offline).
-window.addEventListener('load',()=>{if(game)render();});
+document.addEventListener('click',e=>{const el=e.target.closest('button');if(!el)return;if(el.dataset.card!==undefined&&playerActive()){const i=+el.dataset.card;if(isBinary()&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(game.hands[0][i]))selectOperand({kind:'hand',index:i});else if(i===selection.cardIndex){selection=fresh();message='';render();}else chooseCard(i);return;}if(el.dataset.field!==undefined){selectTarget(+el.dataset.field,null);return;}if(el.dataset.owner!==undefined){selectTarget(+el.dataset.owner,+el.dataset.index);return;}switch(el.id){case 'act-btn':if(playerActive()&&currentMove())takeTurn(currentMove());break;case 'cancel-btn':selection=fresh();message='';render();break;case 'inspect-btn':showFormula(selection.owner,selection.target);break;case 'skip-com':comScene?.finish();break;case 'hint-btn':hint();break;case 'swap-btn':if(playerActive()&&currentCard()&&game.deck.length)takeTurn({discard:true,cardIndex:selection.cardIndex});break;case 'restart-btn':start();break;case 'new-btn':if(game.finished||confirm('対戦を最初からやり直しますか？'))start();break;case 'help-btn':$('help-dialog').showModal();break;case 'settings-btn':$('settings-panel').classList.toggle('show');break;case 'history-btn':$('log-dialog').showModal();break;case 'close-log':$('log-dialog').close();break;case 'close-formula':$('formula-dialog').close();break;case 'close-help':$('help-dialog').close();break;}});
+document.addEventListener('change',e=>{if(e.target.id==='constant-select'){selection.C=+e.target.value;selection.owner=null;selection.target=null;message='';render();}if(e.target.id==='side-select'){selection.side=e.target.value;selection.owner=null;selection.target=null;message='';render();}if(e.target.id==='difficulty'){game.difficulty=e.target.value;save();}});
+const prior=load();if(prior){game=prior;$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}else start();window.addEventListener('load',()=>{if(game)render();});

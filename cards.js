@@ -21,7 +21,7 @@ export const CARDS = [
   {id:'LIMSUP',label:'lim sup',kind:'single',count:1,description:'x→+∞ の上極限'},
   {id:'LIMINF',label:'lim inf',kind:'single',count:1,description:'x→+∞ の下極限'},
   {id:'SQRT',label:'√',kind:'single',count:2,description:'平方根を取る'},
-  {id:'INVERSE',label:'f⁻¹',kind:'single',count:2,description:'既知の関数に対し主枝の逆関数を取る'},
+  {id:'INVERSE',label:'f⁻¹',kind:'single',count:2,description:'実数の主枝で逆関数を取る'},
   {id:'LOG',label:'log',kind:'single',count:3,description:'自然対数を取る'},
   // Prototype expansion cards (opt-in deck option)
   {id:'PLUS_C',label:'+C',kind:'constant',count:5,expansion:true,description:'指定した基底に定数Cを加える（独自カード）'},

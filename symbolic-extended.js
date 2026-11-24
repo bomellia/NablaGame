@@ -1,9 +1,10 @@
-import {displayNumber} from './number-format.js?v=0.10';
+import {solveInverse} from './inverse-rules.js?v=0.11';
+import {displayNumber} from './number-format.js?v=0.11';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.10';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.10';
-export * from './symbolic.js?v=0.10';
+import * as base from './symbolic.js?v=0.11';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.11';
+export * from './symbolic.js?v=0.11';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -56,6 +57,13 @@ export function fn(name,arg){
   if(name==='cosh')return n(Math.cosh(v));
   if(name==='tanh')return n(Math.tanh(v));
   if(name==='atan')return n(Math.atan(v));
+  if(name==='erfinv'){if(Math.abs(v)>=1)throw new base.Unsupported('erfinv の実数定義域外です');if(v===0)return n(0);}
+  if(name==='erfiinv'&&v===0)return n(0);
+  if(name==='LambertW'){if(v < -1/Math.E-1e-10)throw new base.Unsupported('Lambert W の実数主枝の定義域外です');if(v===0)return n(0);if(Math.abs(v+1/Math.E)<1e-10)return n(-1);}
+
+  if(name==='asinh')return n(Math.asinh(v));
+  if(name==='acosh'){if(v<1)throw new base.Unsupported('acosh の定義域外です');return n(Math.acosh(v));}
+  if(name==='atanh'){if(Math.abs(v)>=1)throw new base.Unsupported('atanh の定義域外です');return n(Math.atanh(v));}
  }
  if(arg?.t==='m'&&arg.v[0]?.t==='n'&&arg.v[0].v<0&&['sin','cos','sinh','cosh'].includes(name)){
   const positive=base.mul(n(-arg.v[0].v),...arg.v.slice(1));
@@ -69,6 +77,7 @@ export function fn(name,arg){
  return base.fn(name,arg);
 }
 const f=fn;
+export function inverse(e){return simplify(solveInverse(simplify(e),X(),fn));}
 export function mul(...parts){
  const e=base.mul(...parts);
  if(e.t!=='m')return e;
@@ -125,12 +134,18 @@ function derivativeFn(e){
   case 'asin':return div(da,f('sqrt',add(n(1),neg(pow(a,2)))));
   case 'acos':return neg(div(da,f('sqrt',add(n(1),neg(pow(a,2))))));
   case 'atan':return div(da,add(n(1),pow(a,2)));
+  case 'asinh':return div(da,pow(add(n(1),pow(a,2)),.5));
+  case 'acosh':return div(da,pow(add(pow(a,2),n(-1)),.5));
+  case 'atanh':return div(da,add(n(1),neg(pow(a,2))));
   case 'Li':return div(da,f('log',a));
   case 'Ei':return df(div(f('exp',a),a));
   case 'Si':return df(div(f('sin',a),a));
   case 'Ci':return a.t==='f'&&a.f==='abs'?div(mul(f('cos',a.arg),derivative(a.arg)),a.arg):df(div(f('cos',a),a));
   case 'Shi':return df(div(f('sinh',a),a));
   case 'Chi':return a.t==='f'&&a.f==='abs'?div(mul(f('cosh',a.arg),derivative(a.arg)),a.arg):df(div(f('cosh',a),a));
+  case 'erfinv':return df(mul(n(Math.sqrt(Math.PI)/2),f('exp',pow(e,2))));
+  case 'erfiinv':return df(mul(n(Math.sqrt(Math.PI)/2),f('exp',neg(pow(e,2)))));
+  case 'LambertW':return df(div(f('exp',neg(e)),add(n(1),e)));
   case 'erf':return df(mul(n(2/Math.sqrt(Math.PI)),f('exp',neg(pow(a,2)))));
   case 'erfi':return df(mul(n(2/Math.sqrt(Math.PI)),f('exp',pow(a,2))));
   case 'FresnelS':return df(f('sin',mul(n(Math.PI/2),pow(a,2))));
@@ -217,6 +232,15 @@ function elementaryFunctionPrimitive(name,u){
   case 'csc':return f('logabs',add(f('csc',u),neg(f('cot',u))));
   case 'tanh':return f('log',f('cosh',u));
   case 'log':case 'logabs':return add(mul(u,f(name,u)),neg(u));
+  case 'asin':return add(mul(u,f(name,u)),pow(add(n(1),neg(pow(u,2))),.5));
+  case 'acos':return add(mul(u,f(name,u)),neg(pow(add(n(1),neg(pow(u,2))),.5)));
+  case 'atan':return add(mul(u,f(name,u)),mul(n(-.5),f('log',add(n(1),pow(u,2)))));
+  case 'erfinv':return neg(mul(n(1/Math.sqrt(Math.PI)),f('exp',neg(pow(f(name,u),2)))));
+  case 'erfiinv':return mul(n(1/Math.sqrt(Math.PI)),f('exp',pow(f(name,u),2)));
+  case 'LambertW':{const w=f(name,u);return mul(f('exp',w),add(pow(w,2),neg(w),n(1)));}
+  case 'asinh':return add(mul(u,f(name,u)),neg(pow(add(n(1),pow(u,2)),.5)));
+  case 'acosh':return add(mul(u,f(name,u)),neg(pow(add(pow(u,2),n(-1)),.5)));
+  case 'atanh':return add(mul(u,f(name,u)),mul(n(.5),f('logabs',add(n(1),neg(pow(u,2))))));
  }
  return null;
 }
@@ -906,6 +930,11 @@ function specialLimit(e,point,side,depth){
    case 'cosh':case 'Chi':return P;
    case 'tanh':return finite(sign);
    case 'atan':return finite(sign*Math.PI/2);
+   case 'asinh':return sign>0?P:M;
+   case 'acosh':return sign>0?P:nonexistent;
+   case 'atanh':case 'erfinv':return nonexistent;
+   case 'erfiinv':return sign>0?P:M;
+   case 'LambertW':return sign>0?P:nonexistent;
    case 'abs':return P;
   }
  }
@@ -917,6 +946,11 @@ function specialLimit(e,point,side,depth){
    if(['Si','Shi','erf','erfi','FresnelS','FresnelC'].includes(name))return finite(0);
   }
   if(name==='Li'&&close(v,1))return M;
+  if(name==='acosh'&&v<1||name==='atanh'&&Math.abs(v)>1)return nonexistent;
+  if(name==='atanh'&&close(Math.abs(v),1))return unknown;
+  if(name==='erfinv'&&Math.abs(v)>1)return nonexistent;
+  if(name==='erfinv'&&close(Math.abs(v),1))return unknown;
+  if(name==='LambertW'&&v < -1/Math.E-1e-10)return nonexistent;
   if((name==='Ci'&&v<0)||(name==='Li'&&v<0))return nonexistent;
   try {const v2=f(name,n(v));return v2.t==='n'?finite(v2.v):symbolic(v2);}catch{return unknown;}
  }

@@ -1,6 +1,6 @@
 /* Domain-forgetting normalization: a game rule deliberately identifies x/x with 1,
    including at removed points. No singularity history is retained. */
-import * as b from './symbolic.js?v=0.10';
+import * as b from './symbolic.js?v=0.11';
 const EPS=1e-9, MAX_DEG=12;
 const n=b.constant, x=b.x;
 const approx=(a,z=0)=>Math.abs(a-z)<EPS;

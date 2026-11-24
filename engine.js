@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.10';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.11';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.10';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.11';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -145,7 +145,7 @@ function finish(state) {
     state.winner=a===b?-1:a>b?0:1;
   }
 }
-export function applyMove(s,move) {
+export function applyMove(s,move,trace=null) {
   if(move.discard) {
     const ns=copy(s),actor=ns.turn;
     if(s.finished||!ns.deck.length||!Number.isInteger(move.cardIndex)||move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('捨て札にできません');
@@ -158,10 +158,12 @@ export function applyMove(s,move) {
   const used=[move.cardIndex]; let info='';
   if(card.kind==='function') {
     own.push(simplify(fromCard(id)));
+    if(trace)trace.result=[own.at(-1)];
     info=`${card.label} を基底に追加`;
   } else if(card.kind==='global') {
     const transformed=own.map(e=>simplify(id==='DELTA'?safeDerivative(safeDerivative(e)):safeDerivative(e)));
     own.splice(0,own.length,...transformed);
+    if(trace)trace.result=transformed;
     info=`場全体を${id==='DELTA'?'2階':'1階'}微分`;
   } else {
     const before=display(own[move.target]);
@@ -169,6 +171,7 @@ export function applyMove(s,move) {
     let after=simplify(opSingle(id,own[move.target],move,partner));
     if(!after || expressionSize(after)>MAX_EXPRESSION_SIZE || display(after).length>MAX_DISPLAY_LENGTH)throw new Unsupported('この式は巨大なため安全上制限しています。カード交換も利用できます');
     own[move.target]=after;
+    if(trace)trace.result=[after];
     info=`${before} → ${display(after)}`;
     if(partner)used.push(move.partnerIndex);
   }
@@ -177,6 +180,7 @@ export function applyMove(s,move) {
   const resolved=reduceBasis(own);
   ns.boards[move.owner]=resolved.kept;
   const erased=preCount-resolved.kept.length;
+  if(trace)trace.erased=erased;
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
   ns.log.unshift(`${actorName}：${targetName}の場に ${card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
@@ -188,8 +192,8 @@ export function applyMove(s,move) {
 }
 export function preview(s,move) {
   try {
-    const after=applyMove(s,move);
-    return {ok:true,state:after,delta:[after.boards[0].length-s.boards[0].length,after.boards[1].length-s.boards[1].length],description:after.log[0]};
+    const effect={};const after=applyMove(s,move,effect);
+    return {ok:true,state:after,effect,delta:[after.boards[0].length-s.boards[0].length,after.boards[1].length-s.boards[1].length],description:after.log[0]};
   } catch(e) {
     if(e instanceof Unsupported || e instanceof RangeError)return {ok:false,reason:e.message};
     throw e;

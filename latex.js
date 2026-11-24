@@ -1,5 +1,5 @@
-import {latexNumber} from './number-format.js?v=0.10';
-import {orderedTerms} from './normalization.js?v=0.10';
+import {latexNumber} from './number-format.js?v=0.11';
+import {orderedTerms} from './normalization.js?v=0.11';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -9,9 +9,9 @@ const safeOrder = value => Number.isInteger(value)&&value>0&&value<64?value:1;
 const fnNames={
   sin:'\\sin',cos:'\\cos',tan:'\\tan',cot:'\\cot',sec:'\\sec',csc:'\\csc',
   sinh:'\\sinh',cosh:'\\cosh',tanh:'\\tanh',exp:'\\exp',
-  log:'\\ln',asin:'\\arcsin',acos:'\\arccos',atan:'\\arctan',
+  log:'\\ln',asin:'\\arcsin',acos:'\\arccos',atan:'\\arctan',asinh:'\\operatorname{arsinh}',acosh:'\\operatorname{arcosh}',atanh:'\\operatorname{artanh}',
   Li:'\\operatorname{Li}',Ei:'\\operatorname{Ei}',Si:'\\operatorname{Si}',Ci:'\\operatorname{Ci}',
-  Shi:'\\operatorname{Shi}',Chi:'\\operatorname{Chi}',erf:'\\operatorname{erf}',erfi:'\\operatorname{erfi}',
+  Shi:'\\operatorname{Shi}',Chi:'\\operatorname{Chi}',erf:'\\operatorname{erf}',erfi:'\\operatorname{erfi}',erfinv:'\\operatorname{erf}^{-1}',erfiinv:'\\operatorname{erfi}^{-1}',LambertW:'W_0',
   FresnelS:'\\operatorname{S}',FresnelC:'\\operatorname{C}',sign:'\\operatorname{sgn}'
 };
 const atomLike=e=>['n','x','f'].includes(e?.t);
