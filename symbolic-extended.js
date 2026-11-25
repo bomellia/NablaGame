@@ -23,7 +23,8 @@ export function fn(name,arg){
  if(name==='exp'&&arg?.t==='f'&&arg.f==='log')return arg.arg;
  if(name==='exp'&&arg?.t==='f'&&arg.f==='logabs')return base.fn('abs',arg.arg);
  if(name==='exp'&&arg?.t==='m'&&arg.v.length===2&&arg.v[0].t==='n'&&arg.v[1].t==='f'&&['log','logabs'].includes(arg.v[1].f)){
-  const q=arg.v[1];return pow(q.f==='logabs'?base.fn('abs',q.arg):q.arg,arg.v[0].v);
+  const q=arg.v[1],u=q.f==='logabs'?base.fn('abs',q.arg):q.arg,k=arg.v[0].v;
+  return k===.5?base.fn('sqrt',u):pow(u,k);
  }
  if(name==='exp'&&arg?.t==='a'&&arg.v.every(v=>v.t==='n'||v.t==='f'&&['log','logabs'].includes(v.f)||v.t==='m'&&v.v.length===2&&v.v[0].t==='n'&&v.v[1].t==='f'&&['log','logabs'].includes(v.v[1].f)))return base.mul(...arg.v.map(v=>fn('exp',v)));
  if((name==='log'||name==='logabs')&&arg?.t==='p'){
