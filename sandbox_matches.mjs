@@ -1,5 +1,5 @@
 import {newGame,chooseComMove,applyMove,legalMoves,preview} from './engine.js';
-import {display,expressionSize} from './symbolic-extended.js';
+import {display,expressionSize} from './game-math.js';
 const seedRandom = seed => {let a=seed>>>0;return ()=> {a=(a*1664525+1013904223)>>>0;return a/4294967296;}};
 const results={matches:0,complete:0,aborted:0,player0:0,player1:0,draw:0,turns:0,maxTurns:0,maxBasisSize:0,maxDisplayLength:0,swaps:0,unknownCards:0,formalExprs:0,tanCount:0,reason:{},errors:[],samples:[]};
 const total=Number(process.argv[2]||60);

@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck} from './cards.js?v=0.11';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_FUNCTIONS,HAND_OPERATORS,cardPool} from './cards.js?v=0.12';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative} from './symbolic-extended.js?v=0.11';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.12';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -27,7 +27,7 @@ function safeDerivative(e){
  return value;
 }
 function containsUnevaluatedDerivative(e){
- return !!e && (e.t==='D'||(e.arg&&containsUnevaluatedDerivative(e.arg))||
+ return !!e && (e.t==='D'||(e.t==='complex'&&(containsUnevaluatedDerivative(e.re)||containsUnevaluatedDerivative(e.im)))||(e.arg&&containsUnevaluatedDerivative(e.arg))||
    (e.b&&containsUnevaluatedDerivative(e.b))||(Array.isArray(e.v)&&e.v.some(containsUnevaluatedDerivative)));
 }
 const SOFT_SIZE=110, SOFT_LENGTH=260;
@@ -40,7 +40,7 @@ function safeIntegral(e,C){
 }
 /** A legacy formal limit was never proven. It must not take part in scoring. */
 function hasLegacyLimit(e){
-  return !!e && ((e.t==='L'||e.t==='I') || (e.arg && hasLegacyLimit(e.arg)) ||
+  return !!e && ((e.t==='L'||e.t==='I') || (e.t==='complex'&&(hasLegacyLimit(e.re)||hasLegacyLimit(e.im))) || (e.arg && hasLegacyLimit(e.arg)) ||
     (e.b && hasLegacyLimit(e.b)) || (Array.isArray(e.v) && e.v.some(hasLegacyLimit)));
 }
 /** Restore saved games made by older, less aggressive formula simplifiers. */
@@ -71,15 +71,16 @@ export function normalizeGame(game){
       state.winner=a===b?-1:a>b?0:1;
     }
   }
-  state.version=8;
+  state.version=12;
   return state;
 }
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
-  const deck=shuffle(makeDeck(extended),random);
+  const all=makeDeck(extended);
+  const decks={function:shuffle(all.filter(id=>cardPool(id)==='function'),random),operator:shuffle(all.filter(id=>cardPool(id)==='operator'),random)};
   const hands=[[],[]];
-  for(let i=0;i<7;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
+  for(const [kind,count] of [['function',HAND_FUNCTIONS],['operator',HAND_OPERATORS]])for(let i=0;i<count;i++)for(let p=0;p<2;p++)hands[p].push(decks[kind].pop());
   const opening=initialBoard(random);
-  return {version:8,boards:[copy(opening),copy(opening)],hands,deck,turn:startingPlayer,
+  return {version:12,boards:[copy(opening),copy(opening)],hands,decks,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
     turns:0,finished:false,winner:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
@@ -94,7 +95,7 @@ export function validate(s,move) {
   if(opTargetRequired(card.kind) && !(card.kind==='global')) {
     if(!Number.isInteger(move.target)||move.target<0||move.target>=s.boards[move.owner].length)throw new Unsupported('対象の基底を選んでください');
   }
-  if(cardId==='DELTA'&&s.turns===0 && s.turn===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
+  if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
     if(move.partnerIndex===move.cardIndex || !Number.isInteger(move.partnerIndex) || !FUNCTION_CARDS.includes(s.hands[actor][move.partnerIndex]))throw new Unsupported('別の関数カードが必要です');
     if(cardId==='DIV'&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported('除算の向きを指定してください');
@@ -117,8 +118,9 @@ function opSingle(id,basis,move,partner) {
       if(denominator.t==='n' && denominator.v===0)throw new Unsupported('恒等的に0となる式では除算できません');
       return div(numerator,denominator);
     }
-    case 'SQRT':if(hasEmptyRealDomain(basis,'sqrt'))return constant(0);return fn('sqrt',basis);
-    case 'LOG':if(hasEmptyRealDomain(basis,'log'))return constant(0);return fn('log',basis);
+    case 'SQRT':return fn('sqrt',basis);
+    case 'LOG':return fn('log',basis);
+    case 'EXP_OP':case 'SQUARE':case 'INT_HALF':case 'INT_ALL':case 'LAPLACE':case 'INV_LAPLACE':case 'FOURIER':case 'INV_FOURIER':return advancedOperation(id,basis);
     case 'INVERSE':return inverse(basis);
     case 'PLUS_C':return add(basis,constant(move.C));
     case 'REFLECT':return substituteNegX(basis);
@@ -135,11 +137,18 @@ function opSingle(id,basis,move,partner) {
     default:throw new Unsupported('未対応カードです');
   }
 }
-function draw(state,actor,count) {
-  for(let i=0;i<count&&state.deck.length;i++) state.hands[actor].push(state.deck.pop());
+// Preview modifies only the cloned state's deterministic PRNG.
+function nextRandom(state){state.rng=(Math.imul(state.rng>>>0,1664525)+1013904223)>>>0;return state.rng/4294967296;}
+function recycle(state,actor,indices){
+ const used=[...indices].sort((a,b)=>b-a).map(i=>state.hands[actor].splice(i,1)[0]);
+ for(const id of used){const deck=state.decks[cardPool(id)];if(!deck.length)throw new Unsupported('山札データが不正です');state.hands[actor].push(deck.pop());}
+ for(const id of used){const deck=state.decks[cardPool(id)];deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);}
+ state.hands[actor].sort((a,b)=>Number(cardPool(a)==='operator')-Number(cardPool(b)==='operator'));
 }
+export function deckCount(state){return state.decks.function.length+state.decks.operator.length;}
+export function resign(state,actor=0){const s=copy(state);s.finished=true;s.winner=1-actor;s.log.unshift('投了しました。');return s;}
 function finish(state) {
-  if(state.boards.some(b=>b.length===0)||state.deck.length===0){
+  if(state.boards.some(b=>b.length===0)){
     state.finished=true;
     const a=state.boards[0].length,b=state.boards[1].length;
     state.winner=a===b?-1:a>b?0:1;
@@ -148,9 +157,9 @@ function finish(state) {
 export function applyMove(s,move,trace=null) {
   if(move.discard) {
     const ns=copy(s),actor=ns.turn;
-    if(s.finished||!ns.deck.length||!Number.isInteger(move.cardIndex)||move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('捨て札にできません');
+    if(s.finished||!Number.isInteger(move.cardIndex)||move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('捨て札にできません');
     ns.log.unshift(`${actor===0?'あなた':'COM'}：カードを1枚交換（ターン消費）`);
-    ns.hands[actor].splice(move.cardIndex,1);draw(ns,actor,1);
+    recycle(ns,actor,[move.cardIndex]);
     ns.turn=1-actor;ns.turns++;finish(ns);return ns;
   }
   const card=validate(s,move), actor=s.turn, id=card.id;
@@ -185,8 +194,7 @@ export function applyMove(s,move,trace=null) {
   const actorName=actor===0?'あなた':'COM';
   ns.log.unshift(`${actorName}：${targetName}の場に ${card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
   ns.log=ns.log.slice(0,16);
-  used.sort((a,b)=>b-a).forEach(i=>ns.hands[actor].splice(i,1));
-  draw(ns,actor,used.length);
+  recycle(ns,actor,used);
   ns.turn=1-actor;ns.turns++;finish(ns);
   return ns;
 }
@@ -231,7 +239,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
       }
     }
   }
-  if(!moves.length&&s.deck.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i}));
+  if(!moves.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i}));
   return moves;
 }
 function valueOf(e) {

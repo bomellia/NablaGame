@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {newGame,chooseComMove,applyMove} from './engine.js';
-import {fromCard,integrate,derivative,display,simplify,mul,div,sig,expressionSize} from './symbolic-extended.js';
+import {fromCard,integrate,derivative,display,simplify,mul,div,sig,expressionSize} from './game-math.js';
 const seed=Number(process.argv[2]||3), rounds=Number(process.argv[3]||8), maxTurns=Number(process.argv[4]||24);
 let rngSeed=seed; const random=()=>((rngSeed=(Math.imul(rngSeed,1664525)+1013904223)>>>0)/4294967296);
 const stats={rounds,turns:0,completed:0,partial:0,diffOK:0,diffFAIL:0,integralOK:0,integralFAIL:0,mixedOK:0,mixedFAIL:0};
@@ -23,7 +23,7 @@ function attempt(e,mode,origin){
   errors.set(key,sample);
  }
 }
-const materials=['X','X2','EXP','SIN','COS'];
+const materials=['X','X2','EXP','SIN','COS','NEGEXP','TAN','LN_X','RECIP_X','ROOT_X','CAUCHY','GAUSS'];
 for(let gameIndex=0;gameIndex<rounds;gameIndex++){
  let state=newGame({extended:true,difficulty:'normal',random});
  state.turn=gameIndex%2;

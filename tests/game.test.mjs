@@ -6,15 +6,15 @@ import {makeDeck} from '../cards.js';
 function scenario(hand,boards=[['ONE','X','X2'],['ONE','X','X2']]){
   const s=newGame();s.hands[0]=hand;s.boards=boards.map(b=>b.map(fromCard));s.turn=0;s.turns=1;return s;
 }
-test('limit-card frequency reduced by three; other cards unchanged',()=>{
-  assert.equal(makeDeck(false).length,77);assert.equal(makeDeck(true).length,85);
-  assert.equal(newGame({extended:false}).deck.length,63);
+test('deck composition and fixed hand sizes',()=>{
+  assert.equal(makeDeck(false).length,103);assert.equal(makeDeck(true).length,111);
+  assert.equal(newGame({extended:false}).decks.function.length+newGame({extended:false}).decks.operator.length,83);
 });
 test('initial boards are mirrored, nonconstant and three dimensional; hands draw randomly',()=>{
   const s=newGame();assert.equal(s.boards[0].length,3);assert.equal(s.boards[1].length,3);
   assert.deepEqual(s.boards[0],s.boards[1]);
   assert.equal(s.boards[0].some(e=>e.t==='n'),false);
-  assert.deepEqual(s.hands.map(h=>h.length),[7,7]);
+  assert.deepEqual(s.hands.map(h=>h.length),[10,10]);
 });
 test('d/dx of x squared is 2x and reduces one dimension',()=>{
   const s=scenario(['DIFF']);const t=applyMove(s,{cardIndex:0,owner:1,target:2});

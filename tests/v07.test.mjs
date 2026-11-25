@@ -32,9 +32,9 @@ test('initial boards are shared and vary independently from deck shuffle',()=>{
  const s=newGame({random:()=>.5});assert.deepEqual(s.boards[0],s.boards[1]);
  assert.equal(s.boards[0].some(e=>e.t==='n'),false);
 });
-test('frequency of all five limit types is one',()=>{
+test('ordinary limits two each; upper and lower one each',()=>{
  const deck=makeDeck(false);
- for(const id of ['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'])assert.equal(deck.filter(v=>v===id).length,1);
+ for(const id of ['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'])assert.equal(deck.filter(v=>v===id).length,['LIMSUP','LIMINF'].includes(id)?1:2);
 });
 test('elementary integrals sec csc tan cot sin squared and derivative substitutions',()=>{
  for(const e of [fn('sec',X),fn('csc',X),fn('tan',X),fn('cot',X),pow(fn('sin',X),2),mul(X,fn('exp',X)),mul(X,fn('sin',pow(X,2))),fn('sin',mul(n(3),X))]) {

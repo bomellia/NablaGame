@@ -1,5 +1,5 @@
-import {latexNumber} from './number-format.js?v=0.11';
-import {orderedTerms} from './normalization.js?v=0.11';
+import {latexNumber} from './number-format.js?v=0.12';
+import {orderedTerms} from './normalization.js?v=0.12';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
@@ -50,6 +50,7 @@ function productLatex(factors){
 export function toLatex(e){
  if(!e||typeof e!=='object')return '\\text{?}';
  switch(e.t){
+  case 'complex':return `${e.re.t==='n'&&e.re.v===0?'':toLatex(e.re)+' + '}i${round(toLatex(e.im))}`;
   case 'n':return numberLatex(e.v);
   case 'x':return 'x';
   case 'a':return sumTerms(orderedTerms(e.v));
@@ -98,6 +99,7 @@ export function toLatex(e){
  }
 }
 const labels={
+ NEGEXP:"e^{-x}",TAN:"\\tan x",LN_X:"\\ln x",RECIP_X:"\\frac1x",ROOT_X:"\\sqrt{x}",CAUCHY:"\\frac{1}{1+x^2}",GAUSS:"e^{-x^2}",EXP_OP:"\\exp",SQUARE:"\\square^2",INT_HALF:"\\int_0^\\infty",INT_ALL:"\\int_{-\\infty}^\\infty",LAPLACE:"\\mathcal L",INV_LAPLACE:"\\mathcal L^{-1}",FOURIER:"\\mathcal F",INV_FOURIER:"\\mathcal F^{-1}",
  ZERO:'0',ONE:'1',X:'x',X2:'x^2',EXP:'e^x',SIN:'\\sin x',COS:'\\cos x',
  NABLA:'\\nabla',DELTA:'\\Delta',DIFF:'\\frac{\\mathrm{d}}{\\mathrm{d}x}',
  INTEGRATE:'\\int\\!\\mathrm{d}x',MUL:'\\times',DIV:'\\div',
