@@ -73,6 +73,7 @@ export function toLatex(e){
     const phase=`\\frac{${a}}{2}${ell[2]==='Sin'?'-\\frac{\\pi}{4}':''}`;
     return `${ell[1]}\\left(${phase}\\mid ${numberLatex(ell[3]===undefined?2:Number(ell[3]))}\\right)`;
    }
+   if(e.f==='exp')return `e^{${a}}`;
    if(e.f==='sqrt')return `\\sqrt{${a}}`;
    if(e.f==='abs')return `\\left|${a}\\right|`;
    if(e.f==='logabs')return `\\ln\\left|${a}\\right|`;

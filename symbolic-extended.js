@@ -26,7 +26,19 @@ export function fn(name,arg){
   const q=arg.v[1],u=q.f==='logabs'?base.fn('abs',q.arg):q.arg,k=arg.v[0].v;
   return k===.5?base.fn('sqrt',u):pow(u,k);
  }
- if(name==='exp'&&arg?.t==='a'&&arg.v.every(v=>v.t==='n'||v.t==='f'&&['log','logabs'].includes(v.f)||v.t==='m'&&v.v.length===2&&v.v[0].t==='n'&&v.v[1].t==='f'&&['log','logabs'].includes(v.v[1].f)))return base.mul(...arg.v.map(v=>fn('exp',v)));
+ // Extract logarithmic terms and constant shifts without splitting ordinary
+ // exponentials into products which would immediately merge again.
+ if(name==='exp'&&arg?.t==='a'){
+  const isLog=t=>t.t==='f'&&['log','logabs'].includes(t.f)||t.t==='m'&&t.v.length===2&&t.v[0].t==='n'&&t.v[1].t==='f'&&['log','logabs'].includes(t.v[1].f);
+  const logs=arg.v.filter(isLog),rest=arg.v.filter(t=>!isLog(t));
+  if(logs.length)return base.mul(...logs.map(t=>fn('exp',t)),...(rest.length?[fn('exp',add(...rest))]:[]));
+  const constants=arg.v.filter(t=>t.t==='n');
+  if(constants.length){
+   const c=constants.reduce((v,t)=>v+t.v,0),k=Math.exp(c);
+   // Avoid rounding a strictly positive multiplier to zero.
+   if(Number.isFinite(k)&&k>=1e-9)return base.mul(n(k),base.fn('exp',add(...arg.v.filter(t=>t.t!=='n'))));
+  }
+ }
  if((name==='log'||name==='logabs')&&arg?.t==='p'){
   const k=arg.e;
   if(Number.isInteger(k)){
