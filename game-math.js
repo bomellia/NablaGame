@@ -1,8 +1,9 @@
 /* Game-level complex arithmetic and certified transform rules.
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
-import * as R from './symbolic-extended.js?v=0.12';
-export * from './symbolic-extended.js?v=0.12';
+import * as R from './symbolic-extended.js?v=0.14';
+import {asymptoticLimit,periodicRange} from './asymptotic.js?v=0.14';
+export * from './symbolic-extended.js?v=0.14';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
 const zero=e=>e?.t==='n'&&e.v===0;
@@ -35,9 +36,9 @@ export function div(a,b){
 export function pow(e,k){
  if(!isC(e))return R.pow(e,k);
  if(k===.5)return fn('sqrt',e);
- if(!Number.isInteger(k)||Math.abs(k)>16)fail('複素数の分数乗は未対応です');
+ if(!Number.isSafeInteger(k))fail('複素数の分数乗は未対応です');
  if(k<0)return div(O(),pow(e,-k));
- let a=O();for(let i=0;i<k;i++)a=mul(a,e);return a;
+ let a=O(),b=e;while(k>0){if(k%2===1)a=mul(a,b);k=Math.floor(k/2);if(k)b=mul(b,b);}return a;
 }
 function sign(e){
  if(e.t==='n')return Math.sign(e.v);
@@ -87,9 +88,16 @@ export function display(e,wrap=false){
  const out=zero(e.re)?'i·'+im:R.display(e.re)+' + i·'+im;
  return wrap?'('+out+')':out;
 }
+function realTreeLimit(e,point='plus',side='two'){
+ const a=asymptoticLimit(e,point,side);
+ if(a.type==='complex')return {type:'symbolic',expr:complex(n(a.re),n(a.im))};
+ if(a.type==='complexInfinity')return {type:'infinity',sign:1};
+ if(a.type!=='unknown')return a;
+ return R.limit(e,point,side);
+}
 export function limit(e,point='plus',side='two'){
- if(!isC(e))return R.limit(e,point,side);
- const a=R.limit(e.re,point,side),b=R.limit(e.im,point,side);
+ if(!isC(e))return realTreeLimit(e,point,side);
+ const a=realTreeLimit(e.re,point,side),b=realTreeLimit(e.im,point,side);
  if(a.type==='infinity'||b.type==='infinity')return {type:'infinity',sign:1};
  if(a.type==='nonexistent'||b.type==='nonexistent')return {type:'nonexistent'};
  const val=q=>q.type==='finite'?n(q.v):q.type==='symbolic'?q.expr:null;
@@ -97,7 +105,15 @@ export function limit(e,point='plus',side='two'){
  return re&&im?{type:'symbolic',expr:complex(re,im)}:{type:'unknown'};
 }
 export function oscillatoryLimit(e,kind='sup'){
- if(!isC(e))return R.oscillatoryLimit(e,kind);
+ if(!isC(e)){
+  const q=asymptoticLimit(e,'plus','two');
+  if(q.type==='complexInfinity')return {type:'unknown'};
+  if(q.type==='complex')return {type:'symbolic',expr:complex(n(q.re),n(q.im))};
+  if(q.type==='finite'||q.type==='infinity')return q;
+  const r=periodicRange(e,realTreeLimit);
+  if(r&&r.every(Number.isFinite))return {type:'finite',v:r[kind==='sup'?1:0]};
+  return R.oscillatoryLimit(e,kind);
+ }
  const q=limit(e,'plus');return q.type==='symbolic'||q.type==='finite'?q:{type:'unknown'};
 }
 // Complex rank by realification: each complex vector contributes v and i*v.
@@ -173,11 +189,22 @@ function linear(e,op){
  return null;
 }
 function shifted(a){return plus(X(),n(-a));}
+function expTrig(e){
+ const factors=e.t==='m'?e.v:[e];let a=0,b=null,kind=null;
+ for(const factor of factors){
+  if(factor.t!=='f')return null;
+  if(factor.f==='exp'){const k=monomial(factor.arg,1);if(k===null)return null;a+=k;}
+  else if(['sin','cos','sinh','cosh'].includes(factor.f)&&kind===null){b=monomial(factor.arg,1);if(b===null)return null;kind=factor.f;}
+  else return null;
+ }
+ return kind?{a,b,kind}:null;
+}
 function lap(e){
  const l=linear(e,lap);if(l!==null)return l;
  const x=X(),p=degree(e),g=p!==null?gammaHalf(p):null;
  if(g!==null)return times(n(g),power(x,-p-1));
  if(e.t==='n')return quotient(e,x);
+ const t=expTrig(e);if(t){const y=shifted(t.a),hyper=t.kind==='sinh'||t.kind==='cosh',den=plus(power(y,2),n((hyper?-1:1)*t.b*t.b));return quotient(t.kind==='sin'||t.kind==='sinh'?n(t.b):y,den);}
  const m=expMonomial(e);
  if(m&&m.a!==null){const g=gammaHalf(m.p);if(g!==null)return times(n(m.c*g),power(shifted(m.a),-m.p-1));}
  if(e.t==='f'&&['sin','cos'].includes(e.f)){
@@ -230,6 +257,7 @@ function fourier(e){
 function halfIntegral(e){
  const l=linear(e,halfIntegral);if(l!==null)return l;
  const x=X(),m=expMonomial(e);
+ const t=expTrig(e);if(t){const hyper=t.kind==='sinh'||t.kind==='cosh';if(t.a<0&&(!hyper||-t.a>Math.abs(t.b))){const d=t.a*t.a+(hyper?-1:1)*t.b*t.b;return n((t.kind==='sin'||t.kind==='sinh'?t.b:-t.a)/d);}}
  if(m&&m.a!==null&&m.a<0){const g=gammaHalf(m.p);if(g!==null)return n(m.c*g/(-m.a)**(m.p+1));}
  if(m&&m.q!==null&&m.q<0&&m.p>=0&&Number.isInteger(m.p)){
   const g=gammaHalf((m.p-1)/2);if(g!==null)return n(m.c*g/(2*(-m.q)**((m.p+1)/2)));

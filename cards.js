@@ -22,11 +22,11 @@ export const CARDS = [
   {id:'INTEGRATE',label:'∫dx',kind:'constant',count:8,description:'積分。積分定数Cを選べる'},
   {id:'MUL',label:'×',kind:'binary',count:5,description:'関数カードを使用して乗算'},
   {id:'DIV',label:'÷',kind:'binary',count:5,description:'関数カードを使用して除算'},
-  {id:'LIM_PLUS',label:'lim +∞',kind:'single',count:2,description:'x→+∞ の極限'},
-  {id:'LIM_MINUS',label:'lim −∞',kind:'single',count:2,description:'x→−∞ の極限'},
-  {id:'LIM_ZERO',label:'lim 0',kind:'limitZero',count:2,description:'x→0の極限。片側も選択可能'},
-  {id:'LIMSUP',label:'lim sup',kind:'single',count:1,description:'x→+∞ の上極限'},
-  {id:'LIMINF',label:'lim inf',kind:'single',count:1,description:'x→+∞ の下極限'},
+  {id:'LIM_PLUS',label:'lim +∞',kind:'single',count:3,description:'x→+∞ の極限'},
+  {id:'LIM_MINUS',label:'lim −∞',kind:'single',count:3,description:'x→−∞ の極限'},
+  {id:'LIM_ZERO',label:'lim 0',kind:'limitZero',count:4,description:'x→0の極限。片側も選択可能'},
+  {id:'LIMSUP',label:'lim sup',kind:'single',count:2,description:'x→+∞ の上極限'},
+  {id:'LIMINF',label:'lim inf',kind:'single',count:2,description:'x→+∞ の下極限'},
   {id:'SQRT',label:'√',kind:'single',count:2,description:'平方根を取る'},
   {id:'INVERSE',label:'f⁻¹',kind:'single',count:6,description:'実数の主枝で逆関数を取る'},
   {id:'LOG',label:'log',kind:'single',count:3,description:'自然対数を取る'},
@@ -35,9 +35,6 @@ export const CARDS = [
   {id:'INT_HALF',label:'∫₀∞',kind:'single',count:2,description:'半無限区間の広義積分（結果確定時のみ）'},
   {id:'INT_ALL',label:'∫₋∞∞',kind:'single',count:2,description:'全実数区間の広義積分（結果確定時のみ）'},
   {id:'LAPLACE',label:'ℒ',kind:'single',count:2,description:'ラプラス変換（結果確定時のみ）'},
-  {id:'INV_LAPLACE',label:'ℒ⁻¹',kind:'single',count:2,description:'逆ラプラス変換（結果確定時のみ）'},
-  {id:'FOURIER',label:'ℱ',kind:'single',count:2,description:'フーリエ変換（結果確定時のみ）'},
-  {id:'INV_FOURIER',label:'ℱ⁻¹',kind:'single',count:2,description:'逆フーリエ変換（結果確定時のみ）'},
   // Prototype expansion cards (opt-in deck option)
   {id:'PLUS_C',label:'+C',kind:'constant',count:5,expansion:true,description:'指定した基底に定数Cを加える（独自カード）'},
   {id:'REFLECT',label:'x↦−x',kind:'single',count:3,expansion:true,description:'f(x)をf(−x)へ変換する（独自カード）'}
@@ -49,3 +46,5 @@ export const makeDeck = (extended=true) => CARDS.flatMap(c=>!extended&&c.expansi
 
 export const HAND_SIZE=8;
 export const cardPool=id=>CARD_MAP[id]?.kind==='function'?'function':'operator';
+
+export const LIMIT_CARDS=['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'];

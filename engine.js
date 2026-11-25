@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool} from './cards.js?v=0.13';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.14';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.12';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.14';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -17,10 +17,8 @@ export function initialBoard(random=Math.random){
   ].map(simplify);
 }
 
-const MAX_EXPRESSION_SIZE=175;
-const MAX_DISPLAY_LENGTH=2000;
 /** Never turn a mathematically computable derivative into an inert D symbol.
- * A very large expression may still be rejected by the normal game-size guard. */
+ * No fixed AST or display length cap is applied. */
 function safeDerivative(e){
  const value=simplify(derivative(simplify(e)));
  if(containsUnevaluatedDerivative(value))throw new Unsupported('微分結果を確定できません');
@@ -30,13 +28,9 @@ function containsUnevaluatedDerivative(e){
  return !!e && (e.t==='D'||(e.t==='complex'&&(containsUnevaluatedDerivative(e.re)||containsUnevaluatedDerivative(e.im)))||(e.arg&&containsUnevaluatedDerivative(e.arg))||
    (e.b&&containsUnevaluatedDerivative(e.b))||(Array.isArray(e.v)&&e.v.some(containsUnevaluatedDerivative)));
 }
-const SOFT_SIZE=110, SOFT_LENGTH=260;
 function safeIntegral(e,C){
- // Unsupported integrals are illegal, never formal placeholder bases.
- const out=integrate(simplify(e),C);
- if(expressionSize(out)>=SOFT_SIZE||display(out).length>=SOFT_LENGTH)
-   throw new Unsupported('積分結果が大きすぎるため、この操作はできません');
- return out;
+ // Unsupported integrals are illegal, but valid expressions have no size quota.
+ return integrate(simplify(e),C);
 }
 /** A legacy formal limit was never proven. It must not take part in scoring. */
 function hasLegacyLimit(e){
@@ -71,7 +65,7 @@ export function normalizeGame(game){
       state.winner=a===b?-1:a>b?0:1;
     }
   }
-  state.version=13;
+  state.version=14;
   return state;
 }
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
@@ -79,7 +73,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   const hands=[[],[]];
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const opening=initialBoard(random);
-  return {version:13,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
+  return {version:14,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
     turns:0,finished:false,winner:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
@@ -119,7 +113,7 @@ function opSingle(id,basis,move,partner) {
     }
     case 'SQRT':return fn('sqrt',basis);
     case 'LOG':return fn('log',basis);
-    case 'EXP_OP':case 'SQUARE':case 'INT_HALF':case 'INT_ALL':case 'LAPLACE':case 'INV_LAPLACE':case 'FOURIER':case 'INV_FOURIER':return advancedOperation(id,basis);
+    case 'EXP_OP':case 'SQUARE':case 'INT_HALF':case 'INT_ALL':case 'LAPLACE':return advancedOperation(id,basis);
     case 'INVERSE':return inverse(basis);
     case 'PLUS_C':return add(basis,constant(move.C));
     case 'REFLECT':return substituteNegX(basis);
@@ -138,11 +132,21 @@ function opSingle(id,basis,move,partner) {
 }
 // Preview modifies only the cloned state's deterministic PRNG.
 function nextRandom(state){state.rng=(Math.imul(state.rng>>>0,1664525)+1013904223)>>>0;return state.rng/4294967296;}
+// Weighted draws without replacement; preserve the physical card inventory.
+export function limitWeight(opponentDimension){return 1+Math.min(.75,Math.max(0,opponentDimension-3)*.15);}
+function drawWeighted(state,actor){
+ const deck=state.deck,w=limitWeight(state.boards[1-actor].length);
+ if(w===1)return deck.pop();
+ let total=0;for(const id of deck)total+=LIMIT_CARDS.includes(id)?w:1;
+ let r=nextRandom(state)*total;
+ for(let i=0;i<deck.length;i++){r-=LIMIT_CARDS.includes(deck[i])?w:1;if(r<0)return deck.splice(i,1)[0];}
+ return deck.pop();
+}
 function recycle(state,actor,indices){
  const used=[...indices].sort((a,b)=>b-a).map(i=>state.hands[actor].splice(i,1)[0]);
  const deck=state.deck;
  if(deck.length<used.length)throw new Unsupported('山札データが不正です');
- for(const id of used)state.hands[actor].push(deck.pop());
+ for(const id of used)state.hands[actor].push(drawWeighted(state,actor));
  for(const id of used)deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);
 }
 export function deckCount(state){return state.deck.length;}
@@ -177,16 +181,16 @@ export function applyMove(s,move,trace=null) {
     if(trace)trace.result=transformed;
     info=`場全体を${id==='DELTA'?'2階':'1階'}微分`;
   } else {
-    const before=display(own[move.target]);
+    const logText=e=>{const t=display(e);return t.length>180?t.slice(0,177)+'…':t;};
+    const before=logText(own[move.target]);
     const partner=card.kind==='binary'?fromCard(s.hands[actor][move.partnerIndex]):null;
     let after=simplify(opSingle(id,own[move.target],move,partner));
-    if(!after || expressionSize(after)>MAX_EXPRESSION_SIZE || display(after).length>MAX_DISPLAY_LENGTH)throw new Unsupported('この式は巨大なため安全上制限しています。カード交換も利用できます');
+    if(!after)throw new Unsupported('演算結果を確定できません');
     own[move.target]=after;
     if(trace)trace.result=[after];
-    info=`${before} → ${display(after)}`;
+    info=`${before} → ${logText(after)}`;
     if(partner)used.push(move.partnerIndex);
   }
-  if(ns.boards[move.owner].some(e=>expressionSize(e)>MAX_EXPRESSION_SIZE||display(e).length>MAX_DISPLAY_LENGTH))throw new Unsupported('式が大きすぎます');
   const preCount=own.length;
   const resolved=reduceBasis(own);
   ns.boards[move.owner]=resolved.kept;
@@ -268,7 +272,7 @@ function scoreMove(state,move,after,difficulty) {
 export function chooseComMove(s) {
   // Search both players for every card instead of exhausting the first cards.
   // Preview results are reused for scoring, avoiding duplicate CAS work.
-  const moves=legalMoves(s,{limit:150,perCardOwner:10,includeState:true});
+  const moves=legalMoves(s,{limit:1000,perCardOwner:10,includeState:true});
   if(!moves.length)return null;
   let best=moves[0],bestScore=-Infinity;
   for(const move of moves){

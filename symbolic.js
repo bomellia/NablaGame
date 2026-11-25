@@ -93,13 +93,13 @@ function nonnegative(e){
     e.t==='m'?e.v.every(nonnegative):e.t==='a'?e.v.every(nonnegative):false;
 }
 export function pow(base,exp) {
-  if(!Number.isFinite(exp)||Math.abs(exp)>16) throw new Unsupported('指数の範囲外です');
+  if(!Number.isFinite(exp)) throw new Unsupported('指数を有限数として表現できません');
   if(near(exp,0)) return n(1);
   if(near(exp,1)) return base;
   if(base.t==='n') {
     if(near(base.v,0)&&exp<0) throw new Unsupported('0で除算できません');
     if(base.v<0&&!Number.isInteger(exp)) throw new Unsupported('実数で定義されません');
-    return n(base.v**exp);
+    const value=base.v**exp;if(!Number.isFinite(value))throw new Unsupported('数値計算の表現範囲を超えています');return n(value);
   }
   // The game treats removable domain gaps as cancelled. Converting sqrt(u)^n
   // into u^(n/2) exposes inverse square roots to the power-rule integrator.
@@ -127,7 +127,7 @@ export function fn(f,arg) {
   }
   if(arg.t==='n') {
     const a=arg.v;
-    if(f==='exp') return n(Math.exp(a));
+    if(f==='exp') {const value=Math.exp(a);if(!Number.isFinite(value))throw new Unsupported('数値計算の表現範囲を超えています');return n(value);}
     if(f==='sin') return n(Math.sin(a));
     if(f==='cos') return n(Math.cos(a));
     if(f==='log') {if(a<=0) throw new Unsupported('対数の実数定義域が空です');return n(Math.log(a));}
