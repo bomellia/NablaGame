@@ -1,4 +1,4 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_FUNCTIONS,HAND_OPERATORS,cardPool} from './cards.js?v=0.12';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool} from './cards.js?v=0.13';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
   hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.12';
@@ -71,16 +71,15 @@ export function normalizeGame(game){
       state.winner=a===b?-1:a>b?0:1;
     }
   }
-  state.version=12;
+  state.version=13;
   return state;
 }
 export function newGame({extended=true,difficulty='normal',startingPlayer=0,random=Math.random}={}) {
-  const all=makeDeck(extended);
-  const decks={function:shuffle(all.filter(id=>cardPool(id)==='function'),random),operator:shuffle(all.filter(id=>cardPool(id)==='operator'),random)};
+  const deck=shuffle(makeDeck(extended),random);
   const hands=[[],[]];
-  for(const [kind,count] of [['function',HAND_FUNCTIONS],['operator',HAND_OPERATORS]])for(let i=0;i<count;i++)for(let p=0;p<2;p++)hands[p].push(decks[kind].pop());
+  for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const opening=initialBoard(random);
-  return {version:12,boards:[copy(opening),copy(opening)],hands,decks,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
+  return {version:13,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
     turns:0,finished:false,winner:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
@@ -141,11 +140,12 @@ function opSingle(id,basis,move,partner) {
 function nextRandom(state){state.rng=(Math.imul(state.rng>>>0,1664525)+1013904223)>>>0;return state.rng/4294967296;}
 function recycle(state,actor,indices){
  const used=[...indices].sort((a,b)=>b-a).map(i=>state.hands[actor].splice(i,1)[0]);
- for(const id of used){const deck=state.decks[cardPool(id)];if(!deck.length)throw new Unsupported('山札データが不正です');state.hands[actor].push(deck.pop());}
- for(const id of used){const deck=state.decks[cardPool(id)];deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);}
- state.hands[actor].sort((a,b)=>Number(cardPool(a)==='operator')-Number(cardPool(b)==='operator'));
+ const deck=state.deck;
+ if(deck.length<used.length)throw new Unsupported('山札データが不正です');
+ for(const id of used)state.hands[actor].push(deck.pop());
+ for(const id of used)deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);
 }
-export function deckCount(state){return state.decks.function.length+state.decks.operator.length;}
+export function deckCount(state){return state.deck.length;}
 export function resign(state,actor=0){const s=copy(state);s.finished=true;s.winner=1-actor;s.log.unshift('投了しました。');return s;}
 function finish(state) {
   if(state.boards.some(b=>b.length===0)){
@@ -157,9 +157,11 @@ function finish(state) {
 export function applyMove(s,move,trace=null) {
   if(move.discard) {
     const ns=copy(s),actor=ns.turn;
-    if(s.finished||!Number.isInteger(move.cardIndex)||move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('捨て札にできません');
-    ns.log.unshift(`${actor===0?'あなた':'COM'}：カードを1枚交換（ターン消費）`);
-    recycle(ns,actor,[move.cardIndex]);
+    const indices=move.cardIndices??[move.cardIndex];
+    if(s.finished||!Array.isArray(indices)||!indices.length||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||i<0||i>=s.hands[actor].length))throw new Unsupported('交換するカードを正しく選択してください');
+    ns.log.unshift(`${actor===0?'あなた':'COM'}：カードを${indices.length}枚交換（ターン消費）`);
+    ns.log=ns.log.slice(0,16);
+    recycle(ns,actor,indices);
     ns.turn=1-actor;ns.turns++;finish(ns);return ns;
   }
   const card=validate(s,move), actor=s.turn, id=card.id;
@@ -239,7 +241,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
       }
     }
   }
-  if(!moves.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i}));
+  if(!moves.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i,cardIndices:[i]}));
   return moves;
 }
 function valueOf(e) {
@@ -272,6 +274,18 @@ export function chooseComMove(s) {
   for(const move of moves){
     const score=move.discard?(-1000+Math.random()):scoreMove(s,move,move.nextState,s.difficulty);
     if(score>bestScore){bestScore=score;best=move;}
+  }
+  // Exchange is evaluated from the visible hand and legal actions only.
+  // Never inspect the order of unseen replacement cards.
+  const hand=s.hands[s.turn], functions=hand.filter(id=>cardPool(id)==='function').length;
+  const useful=new Set(moves.filter(m=>!m.discard&&(m.scoreDelta[s.turn]>0||m.scoreDelta[1-s.turn]<0)).flatMap(m=>[m.cardIndex,m.partnerIndex].filter(Number.isInteger)));
+  const legal=new Set(moves.filter(m=>!m.discard).map(m=>m.cardIndex));
+  if(!useful.size){
+    const bad=hand.map((id,i)=>({i,id})).filter(({i,id})=>!legal.has(i)&&!(functions===1&&cardPool(id)==='function')).map(v=>v.i);
+    if(bad.length>=2||moves.every(m=>m.discard)) {
+      const indices=bad.length?bad:hand.map((_,i)=>i);
+      return {discard:true,cardIndex:indices[0],cardIndices:indices};
+    }
   }
   const {nextState,scoreDelta,...chosen}=best;
   return chosen;

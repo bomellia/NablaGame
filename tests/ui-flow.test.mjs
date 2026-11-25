@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {newGame} from '../engine.js';
 // Exercise the actual click handlers and asynchronous COM phases without a browser.
 test('selection, ordered operands, confirmation and staged COM interaction',async()=>{
- const state=newGame();state.hands[0]=['DIV','X','DIFF','INTEGRATE','PLUS_C','NABLA','COS'];state.hands[1]=['X2','X','DIFF','SIN','COS','MUL','DIV'];state.boards=[[{t:'x'},{t:'f',f:'sin',arg:{t:'x'}}],[{t:'p',b:{t:'x'},e:2},{t:'f',f:'cos',arg:{t:'x'}}]];state.turn=0;state.turns=1;state.finished=false;
+ const state=newGame();state.hands[0]=['DIV','X','DIFF','INTEGRATE','PLUS_C','NABLA','COS','X'];state.hands[1]=['X2','X','DIFF','SIN','COS','MUL','DIV','X'];state.boards=[[{t:'x'},{t:'f',f:'sin',arg:{t:'x'}}],[{t:'p',b:{t:'x'},e:2},{t:'f',f:'cos',arg:{t:'x'}}]];state.turn=0;state.turns=1;state.finished=false;
  let stored=JSON.stringify(state);const handlers={},nodes=new Map(),timers=[];let worker;
  const node=id=>{if(!nodes.has(id))nodes.set(id,{id,innerHTML:'',textContent:'',value:'normal',checked:true,scrollLeft:0,classList:{toggle(){}},querySelector(){return null;},showModal(){this.open=true;},close(){this.open=false;}});return nodes.get(id);};
  globalThis.document={getElementById:node,addEventListener:(name,fn)=>handlers[name]=fn};globalThis.window={addEventListener(){}};globalThis.localStorage={getItem:()=>stored,setItem:(_key,value)=>{stored=value;}};globalThis.confirm=()=>true;

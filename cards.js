@@ -47,6 +47,5 @@ export const CONSTANTS = [-2,-1,0,1,2];
 export const FUNCTION_CARDS = CARDS.filter(c=>c.kind==='function').map(c=>c.id);
 export const makeDeck = (extended=true) => CARDS.flatMap(c=>!extended&&c.expansion?[]:Array(c.count).fill(c.id));
 
-export const HAND_FUNCTIONS=4;
-export const HAND_OPERATORS=6;
+export const HAND_SIZE=8;
 export const cardPool=id=>CARD_MAP[id]?.kind==='function'?'function':'operator';
