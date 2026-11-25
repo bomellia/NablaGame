@@ -42,6 +42,7 @@ function lead(e,point,side,depth=0){
   if(!b.exact&&k<0)return null;
   const a=b.z||cplx(b.c,0);
   if(a.re===0&&a.im===0){if(k>0)return make(0);return null;}
+  if(a.im===0&&a.re<0&&!Number.isInteger(k)&&!realTail(e.b,point,side,depth+1))return null;
   const z=cp(a,k),s=b.s.map(v=>v*k);
   if(!Number.isFinite(z.re)||!Number.isFinite(z.im)||!s.every(Number.isFinite))return null;
   return {c:clean(z.re),z:cplx(clean(z.re),clean(z.im)),s,exact:b.exact};
@@ -51,14 +52,14 @@ function lead(e,point,side,depth=0){
  // boundedness is sufficient for a squeeze-to-zero, never for a nonzero limit.
  if(['sin','cos','tanh','erf','sign'].includes(name)&&(!u||!u.exact||cmp(u.s,scale0)>0)){
   // A complex-valued argument is not certified bounded by these real bounds.
-  if(!u||u.z?.im)return null;
+  if(!u||u.z?.im||!realTail(e.arg,point,side))return null;
   if(['sin','cos'].includes(name))return make(1,scale0,false);
  }
  if(!u||!u.exact)return null;
  const a=u.z||cplx(u.c,0),r=cmp(u.s,scale0);
  if(a.im!==0)return null;
  if(name==='abs')return make(Math.abs(a.re),u.s);
- if(name==='sqrt'){if(a.re<0)return {c:0,z:cplx(0,Math.sqrt(-a.re)),s:u.s.map(v=>v*.5),exact:true};return make(Math.sqrt(a.re),u.s.map(v=>v*.5));}
+ if(name==='sqrt'){if(a.re<0&&!realTail(e.arg,point,side))return null;if(a.re<0)return {c:0,z:cplx(0,Math.sqrt(-a.re)),s:u.s.map(v=>v*.5),exact:true};return make(Math.sqrt(a.re),u.s.map(v=>v*.5));}
  if(name==='exp'){
   if(r<0)return make(1);
   if(r===0)return make(Math.exp(a.re));
@@ -121,10 +122,45 @@ export function asymptoticLimit(e,point,side){
 }
 // Exact range of a single oscillating phase or a monotone composition.
 // Do not combine independent ranges of multiple correlated functions.
+// Sufficient, not necessary, test of reality and eventual continuity.
+function realTail(e,point,side,depth=0){
+ if(!e||depth>100)return false;
+ const rec=v=>realTail(v,point,side,depth+1);
+ if(e.t==='n'||e.t==='x')return true;
+ if(e.t==='a'||e.t==='m')return e.v.every(rec);
+ if(e.t==='p'){
+  if(!rec(e.b))return false;
+  if(Number.isInteger(e.e))return true;
+  const q=lead(e.b,point,side,depth+1);
+  return !!q&&q.exact&&!(q.z?.im)&&q.c>0;
+ }
+ if(e.t!=='f'||!rec(e.arg))return false;
+ if(['sin','cos','tan','cot','sec','csc','abs','sign','exp','sinh','cosh','tanh','erf','erfi','atan','asinh','logabs'].includes(e.f))return true;
+ if(['sqrt','log'].includes(e.f)){const q=lead(e.arg,point,side,depth+1);return !!q&&q.exact&&!(q.z?.im)&&q.c>0;}
+ return false;
+}
+function continuousTail(e,depth=0){
+ if(!e||depth>100)return false;
+ if(!realTail(e,'plus','two',depth))return false;
+ if(e.t==='n'||e.t==='x')return true;
+ if(e.t==='a'||e.t==='m')return e.v.every(v=>continuousTail(v,depth+1));
+ if(e.t==='p'){
+  if(!continuousTail(e.b,depth+1))return false;
+  if(e.e>=0&&Number.isInteger(e.e))return true;
+  const q=lead(e.b,'plus','two',depth+1);return !!q&&q.exact&&q.c!==0&&!q.z?.im;
+ }
+ if(e.t==='f'&&['sin','cos','exp','abs','sqrt','log','logabs','sinh','cosh','tanh','erf','erfi','atan','asinh'].includes(e.f)){
+  if(!continuousTail(e.arg,depth+1))return false;
+  if(e.f==='logabs'){const q=lead(e.arg,'plus','two',depth+1);return !!q&&q.exact&&q.c!==0&&!q.z?.im;}
+  return true;
+ }
+ return false;
+}
+
 export function periodicRange(e,realLimit){
  if(e.t==='n')return [e.v,e.v];
  if(e.t==='f'&&['sin','cos'].includes(e.f)){
-  const v=realLimit(e.arg,'plus');if(v.type==='infinity')return [-1,1];
+  const v=realLimit(e.arg,'plus');if(v.type==='infinity'&&continuousTail(e.arg))return [-1,1];
  }
  if(e.t==='a'){
   const varying=e.v.filter(v=>v.t!=='n');if(varying.length!==1)return null;
@@ -133,7 +169,7 @@ export function periodicRange(e,realLimit){
  }
  if(e.t==='m'){
   const varying=e.v.filter(v=>v.t!=='n');
-  if(varying.length===2&&varying.every(v=>v.t==='f'&&['sin','cos'].includes(v.f))&&varying[0].f!==varying[1].f&&JSON.stringify(varying[0].arg)===JSON.stringify(varying[1].arg)&&realLimit(varying[0].arg,'plus').type==='infinity'){
+  if(varying.length===2&&varying.every(v=>v.t==='f'&&['sin','cos'].includes(v.f))&&varying[0].f!==varying[1].f&&JSON.stringify(varying[0].arg)===JSON.stringify(varying[1].arg)&&continuousTail(varying[0].arg)&&realLimit(varying[0].arg,'plus').type==='infinity'){
    const c=e.v.filter(v=>v.t==='n').reduce((a,b)=>a*b.v,1);return [-Math.abs(c)/2,Math.abs(c)/2];
   }
   if(varying.length!==1)return null;

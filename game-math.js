@@ -202,6 +202,7 @@ function expTrig(e){
 function lap(e){
  const l=linear(e,lap);if(l!==null)return l;
  const x=X(),p=degree(e),g=p!==null?gammaHalf(p):null;
+ const sinc=sincParts(e);if(sinc)return times(n(sinc.coef),F('atan',quotient(n(sinc.b),shifted(sinc.a))));
  if(g!==null)return times(n(g),power(x,-p-1));
  if(e.t==='n')return quotient(e,x);
  const t=expTrig(e);if(t){const y=shifted(t.a),hyper=t.kind==='sinh'||t.kind==='cosh',den=plus(power(y,2),n((hyper?-1:1)*t.b*t.b));return quotient(t.kind==='sin'||t.kind==='sinh'?n(t.b):y,den);}
@@ -254,9 +255,41 @@ function fourier(e){
  }
  fail('通常関数としてのフーリエ変換を確定できません（超関数は対象外）');
 }
+// x^p/(x²+a²)^k with p>=0 integer and p<2k-1.
+// The positive quadratic has no real pole and the beta integral converges.
+function betaQuadratic(e){
+ const fs=e.t==='m'?e.v:[e];
+ let p=0,k=null,a=null,scale=1;
+ for(const term of fs){
+  if(term.t==='n'){scale*=term.v;continue;}
+  const degreeX=degree(term);
+  if(degreeX!==null){p+=degreeX;continue;}
+  if(k!==null||term.t!=='p'||!Number.isInteger(term.e)||term.e>=0||term.b.t!=='a')return null;
+  const q=term.b.v.find(t=>t.t==='p'&&t.b.t==='x'&&t.e===2),c=term.b.v.find(t=>t.t==='n');
+  if(!q||!c||c.v<=0||term.b.v.length!==2)return null;
+  k=-term.e;a=Math.sqrt(c.v);
+ }
+ if(k===null||!Number.isInteger(p)||p<0||p>=2*k-1)return null;
+ const u=gammaHalf((p-1)/2),v=gammaHalf(k-(p+1)/2-1),w=gammaHalf(k-1);
+ if(u===null||v===null||w===null)return null;
+ const value=scale*a**(p+1-2*k)*u*v/(2*w);return Number.isFinite(value)?n(value):null;
+}
+function sincParts(e){
+ const fs=e.t==='m'?e.v:[e];let b=null,a=0,reciprocal=false,coef=1;
+ for(const t of fs){
+  if(t.t==='n'){coef*=t.v;continue;}
+  if(t.t==='p'&&t.b.t==='x'&&t.e===-1&&!reciprocal){reciprocal=true;continue;}
+  if(t.t==='f'&&t.f==='sin'&&b===null){b=monomial(t.arg,1);if(b===null)return null;continue;}
+  if(t.t==='f'&&t.f==='exp'){const q=monomial(t.arg,1);if(q===null)return null;a+=q;continue;}
+  return null;
+ }
+ return b!==null&&reciprocal?{a,b,coef}:null;
+}
 function halfIntegral(e){
  const l=linear(e,halfIntegral);if(l!==null)return l;
  const x=X(),m=expMonomial(e);
+ const beta=betaQuadratic(e);if(beta!==null)return beta;
+ const sinc=sincParts(e);if(sinc&&sinc.a<=0)return n(sinc.coef*(sinc.a===0?Math.sign(sinc.b)*Math.PI/2:Math.atan(sinc.b/-sinc.a)));
  const t=expTrig(e);if(t){const hyper=t.kind==='sinh'||t.kind==='cosh';if(t.a<0&&(!hyper||-t.a>Math.abs(t.b))){const d=t.a*t.a+(hyper?-1:1)*t.b*t.b;return n((t.kind==='sin'||t.kind==='sinh'?t.b:-t.a)/d);}}
  if(m&&m.a!==null&&m.a<0){const g=gammaHalf(m.p);if(g!==null)return n(m.c*g/(-m.a)**(m.p+1));}
  if(m&&m.q!==null&&m.q<0&&m.p>=0&&Number.isInteger(m.p)){
