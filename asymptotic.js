@@ -53,12 +53,14 @@ function lead(e,point,side,depth=0){
  if(['sin','cos','tanh','erf','sign'].includes(name)&&(!u||!u.exact||cmp(u.s,scale0)>0)){
   // A complex-valued argument is not certified bounded by these real bounds.
   if(!u||u.z?.im||!realTail(e.arg,point,side))return null;
-  if(['sin','cos'].includes(name))return make(1,scale0,false);
+  if(['sin','cos','sign','tanh','erf'].includes(name)&&(!u.exact||['sin','cos'].includes(name)))return make(1,scale0,false);
  }
+ if(u&&!u.exact&&name==='abs'&&realTail(e.arg,point,side))return make(1,u.s,false);
  if(!u||!u.exact)return null;
  const a=u.z||cplx(u.c,0),r=cmp(u.s,scale0);
  if(a.im!==0)return null;
  if(name==='abs')return make(Math.abs(a.re),u.s);
+ if(name==='sign'&&a.re!==0)return make(Math.sign(a.re));
  if(name==='sqrt'){if(a.re<0&&!realTail(e.arg,point,side))return null;if(a.re<0)return {c:0,z:cplx(0,Math.sqrt(-a.re)),s:u.s.map(v=>v*.5),exact:true};return make(Math.sqrt(a.re),u.s.map(v=>v*.5));}
  if(name==='exp'){
   if(r<0)return make(1);
@@ -172,6 +174,13 @@ export function periodicRange(e,realLimit){
   if(varying.length===2&&varying.every(v=>v.t==='f'&&['sin','cos'].includes(v.f))&&varying[0].f!==varying[1].f&&JSON.stringify(varying[0].arg)===JSON.stringify(varying[1].arg)&&continuousTail(varying[0].arg)&&realLimit(varying[0].arg,'plus').type==='infinity'){
    const c=e.v.filter(v=>v.t==='n').reduce((a,b)=>a*b.v,1);return [-Math.abs(c)/2,Math.abs(c)/2];
   }
+  if(varying.length===2){
+   const sg=varying.find(v=>v.t==='f'&&v.f==='sign'),trig=varying.find(v=>v.t==='f'&&['sin','cos'].includes(v.f));
+   if(sg&&trig&&sg.arg?.t==='f'&&['sin','cos'].includes(sg.arg.f)&&JSON.stringify(sg.arg.arg)===JSON.stringify(trig.arg)&&continuousTail(trig.arg)&&realLimit(trig.arg,'plus').type==='infinity'){
+    const c=e.v.filter(v=>v.t==='n').reduce((a,b)=>a*b.v,1);
+    return sg.arg.f===trig.f?[Math.min(0,c),Math.max(0,c)]:[-Math.abs(c),Math.abs(c)];
+   }
+  }
   if(varying.length!==1)return null;
   const r=periodicRange(varying[0],realLimit);if(!r)return null;
   const c=e.v.filter(v=>v.t==='n').reduce((a,b)=>a*b.v,1);return r.map(v=>v*c).sort((a,b)=>a-b);
@@ -188,6 +197,9 @@ export function periodicRange(e,realLimit){
   if(e.f==='sqrt'&&a>=0)return [Math.sqrt(a),Math.sqrt(b)];
   if(e.f==='abs')return [a<=0&&b>=0?0:Math.min(Math.abs(a),Math.abs(b)),Math.max(Math.abs(a),Math.abs(b))];
   if(e.f==='atan')return r.map(Math.atan);
+  if(e.f==='sign'&&a<0&&b>0)return [-1,1];
+  if(e.f==='sign'&&a>0)return [1,1];
+  if(e.f==='sign'&&b<0)return [-1,-1];
  }
  return null;
 }

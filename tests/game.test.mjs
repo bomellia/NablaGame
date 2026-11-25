@@ -71,6 +71,6 @@ test('reflecting x² does not create a duplicate basis',()=>{
 test('unsafe inverse of square root is rejected until domains are tracked',()=>{
   assert.throws(()=>inverse(fn('sqrt',x())),/逆関数/);
 });
-test('exp(log(x)) is not treated as x on all real numbers',()=>{
-  assert.notEqual(display(fn('exp',fn('log',x()))),display(x()));
+test('exp(Log(x)) cancels under the game principal-log convention',()=>{
+  assert.equal(display(fn('exp',fn('log',x()))),display(x()));
 });

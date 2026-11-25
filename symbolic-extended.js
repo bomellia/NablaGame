@@ -1,10 +1,10 @@
-import {solveInverse} from './inverse-rules.js?v=0.14';
-import {displayNumber} from './number-format.js?v=0.14';
+import {solveInverse} from './inverse-rules.js?v=0.15';
+import {displayNumber} from './number-format.js?v=0.15';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.14';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.14';
-export * from './symbolic.js?v=0.14';
+import * as base from './symbolic.js?v=0.15';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.15';
+export * from './symbolic.js?v=0.15';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -20,6 +20,12 @@ function ellipticInfo(name){
 }
 export {ellipticInfo};
 export function fn(name,arg){
+ if(name==='exp'&&arg?.t==='f'&&arg.f==='log')return arg.arg;
+ if(name==='exp'&&arg?.t==='f'&&arg.f==='logabs')return base.fn('abs',arg.arg);
+ if(name==='exp'&&arg?.t==='m'&&arg.v.length===2&&arg.v[0].t==='n'&&arg.v[1].t==='f'&&['log','logabs'].includes(arg.v[1].f)){
+  const q=arg.v[1];return pow(q.f==='logabs'?base.fn('abs',q.arg):q.arg,arg.v[0].v);
+ }
+ if(name==='exp'&&arg?.t==='a'&&arg.v.every(v=>v.t==='n'||v.t==='f'&&['log','logabs'].includes(v.f)||v.t==='m'&&v.v.length===2&&v.v[0].t==='n'&&v.v[1].t==='f'&&['log','logabs'].includes(v.v[1].f)))return base.mul(...arg.v.map(v=>fn('exp',v)));
  if((name==='log'||name==='logabs')&&arg?.t==='p'){
   const k=arg.e;
   if(Number.isInteger(k)){
@@ -790,6 +796,7 @@ export function simplify(e){
    return normalized(pow(inner,e.e));
   }
   case 'f':{
+   if(e.f==='exp'&&e.arg?.t==='f'&&e.arg.f==='log')return simplify(e.arg.arg);
    const u=simplify(e.arg);
    if(e.f==='sqrt'&&u.t==='p'&&u.b?.t==='x'&&Number.isInteger(u.e)&&u.e>0&&u.e%2===1)
      return pow(X(),u.e/2);

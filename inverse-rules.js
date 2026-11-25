@@ -1,6 +1,6 @@
 /* Explicit real principal branches. Inverses are taken on a monotone branch;
    the game's existing domain-forgetting convention applies to the result. */
-import {x,constant as n,pow,mul,add,div,fn,Unsupported,sig} from './symbolic.js?v=0.14';
+import {x,constant as n,pow,mul,add,div,fn,Unsupported,sig} from './symbolic.js?v=0.15';
 const X=x(), near=(a,b=0)=>Math.abs(a-b)<1e-9;
 const neg=a=>mul(n(-1),a);
 function poly(e){

@@ -1,9 +1,9 @@
 /* Game-level complex arithmetic and certified transform rules.
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
-import * as R from './symbolic-extended.js?v=0.14';
-import {asymptoticLimit,periodicRange} from './asymptotic.js?v=0.14';
-export * from './symbolic-extended.js?v=0.14';
+import * as R from './symbolic-extended.js?v=0.15';
+import {asymptoticLimit,periodicRange} from './asymptotic.js?v=0.15';
+export * from './symbolic-extended.js?v=0.15';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
 const zero=e=>e?.t==='n'&&e.v===0;
@@ -49,6 +49,7 @@ function sign(e){
  return null;
 }
 export function fn(name,e){
+ if(name==='exp'&&e?.t==='f'&&e.f==='log')return simplify(e.arg);
  e=simplify(e);
  if(isC(e)){
   const [a,b]=pair(e);
@@ -78,7 +79,18 @@ export function fromCard(id){
  }
 }
 export function derivative(e){return isC(e)?complex(R.derivative(e.re),R.derivative(e.im)):R.derivative(e);}
-export function integrate(e,C=0){return isC(e)?complex(R.integrate(e.re,C),R.integrate(e.im,0)):R.integrate(e,C);}
+export function integrate(e,C=0){
+ if(isC(e))return complex(integrate(e.re,C),integrate(e.im,0));
+ e=simplify(e);
+ // d|u|/dx = sgn(u)u' away from isolated zeros (game convention).
+ const fs=e.t==='m'?e.v:[e];
+ for(const f of fs){if(f.t!=='f'||f.f!=='sign')continue;
+  const rest=times(...fs.filter(v=>v!==f));const du=R.simplify(R.derivative(f.arg));
+  if(zero(du))continue;
+  try{const k=quotient(rest,du);if(k.t==='n')return plus(times(k,F('abs',f.arg)),n(C));}catch{}
+ }
+ return R.integrate(e,C);
+}
 export function inverse(e){if(isC(e))fail('複素数値関数の逆関数は未対応です');return R.inverse(e);}
 export function substituteNegX(e){return isC(e)?complex(R.substituteNegX(e.re),R.substituteNegX(e.im)):R.substituteNegX(e);}
 export function expressionSize(e){return isC(e)?1+R.expressionSize(e.re)+R.expressionSize(e.im):R.expressionSize(e);}
@@ -93,7 +105,9 @@ function realTreeLimit(e,point='plus',side='two'){
  if(a.type==='complex')return {type:'symbolic',expr:complex(n(a.re),n(a.im))};
  if(a.type==='complexInfinity')return {type:'infinity',sign:1};
  if(a.type!=='unknown')return a;
- return R.limit(e,point,side);
+ const q=R.limit(e,point,side);
+ if(point==='plus'&&(q.type==='unknown'||q.type==='nonexistent')){const r=periodicRange(e,R.limit);if(r&&r.every(Number.isFinite))return r[0]===r[1]?{type:'finite',v:r[0]}:{type:'nonexistent'};}
+ return q;
 }
 export function limit(e,point='plus',side='two'){
  if(!isC(e))return realTreeLimit(e,point,side);
@@ -105,6 +119,7 @@ export function limit(e,point='plus',side='two'){
  return re&&im?{type:'symbolic',expr:complex(re,im)}:{type:'unknown'};
 }
 export function oscillatoryLimit(e,kind='sup'){
+ e=realRepresentative(simplify(e));
  if(!isC(e)){
   const q=asymptoticLimit(e,'plus','two');
   if(q.type==='complexInfinity')return {type:'unknown'};
@@ -125,6 +140,20 @@ function terms(e,out=new Map(),c=1){
  }
  const k=R.sig(e);out.set(k,(out.get(k)||0)+c);return out;
 }
+// A complex basis proportional to a real function has a real representative.
+ // Do not project arbitrary complex functions: x+i sin(x) is not x or sin(x).
+ export function realRepresentative(e){
+  if(!isC(e))return e;
+  const [a,b]=pair(e);
+  if(zero(a))return b;
+  if(zero(b))return a;
+  const re=terms(a),im=terms(b);
+  const k=[...re.keys()].find(k=>re.get(k)!==0);
+  if(k===undefined)return e;
+  const ratio=(im.get(k)||0)/re.get(k);
+  if(Number.isFinite(ratio)&&equal(b,times(n(ratio),a)))return a;
+  return e;
+ }
 function vector(e){
  const [a,b]=pair(e),re=terms(a),im=terms(b),v=new Map(),w=new Map();
  for(const k of new Set([...re.keys(),...im.keys()])){
@@ -144,6 +173,7 @@ function rank(vs){
  }return r;
 }
 export function reduceBasis(board){
+ board=board.map(e=>realRepresentative(simplify(e)));
  if(!board.some(isC))return R.reduceBasis(board);
  const kept=[],removed=[],vs=[];
  board.forEach((raw,i)=>{const e=simplify(raw),v=vector(e);if(rank([...vs,...v])===rank(vs))removed.push(i);else{kept.push(e);vs.push(...v);}});

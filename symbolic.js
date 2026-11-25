@@ -159,7 +159,9 @@ export function fn(f,arg) {
     if(arg.t==='f'&&arg.f==='exp')return n(1);
   }
   if(f==='log' && arg.t==='f'&&arg.f==='exp') return arg.arg;
-  // exp(log(x)) must NOT simplify to x without preserving x>0 domain.
+  // The game uses the complex principal logarithm and ignores removable holes.
+  if(f==='exp'&&arg.t==='f'&&arg.f==='log')return arg.arg;
+  if(f==='exp'&&arg.t==='f'&&arg.f==='logabs')return fn('abs',arg.arg);
   return {t:'f',f,arg};
 }
 export const neg = e => mul(n(-1),e);
