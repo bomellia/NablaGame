@@ -28,9 +28,14 @@ export function mul(...items) {
   const factors=new Map();
   for(const item of flat){
     if(item.t==='n'){coeff*=item.v;continue;}
-    const exp=item.t==='p'?item.e:1, b=item.t==='p'?item.b:item;
+    // A principal square root is the 1/2 power of its argument.
+    // Merge powers of the SAME base only; never split sqrt(u*v) into
+    // independent roots (that would change complex branches).
+    let exp=item.t==='p'?item.e:1, b=item.t==='p'?item.b:item;
+    const root=b.t==='f'&&b.f==='sqrt';
+    if(root){exp*=.5;b=b.arg;}
     const key=sig(b),prev=factors.get(key);
-    factors.set(key,{b,exp:tidy((prev?.exp||0)+exp)});
+    factors.set(key,{b,exp:tidy((prev?.exp||0)+exp),root:root||prev?.root});
   }
   coeff=tidy(coeff);
   if(!Number.isFinite(coeff))throw new Unsupported('数値が大きすぎます');
@@ -59,7 +64,7 @@ export function mul(...items) {
     }else factors.set(key,{b:item.b,exp:1});
   }
   const core=[];
-  for(const {b,exp} of factors.values())if(!near(exp))core.push(near(exp,1)?b:pow(b,exp));
+  for(const {b,exp,root} of factors.values())if(!near(exp))core.push(near(exp,1)?b:root&&exp===.5?fn('sqrt',b):pow(b,exp));
   core.sort(keyOrder);
   if(!core.length)return n(coeff);
   if(!near(coeff,1))core.unshift(n(coeff));

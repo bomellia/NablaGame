@@ -1,6 +1,6 @@
 /* Domain-forgetting normalization: a game rule deliberately identifies x/x with 1,
    including at removed points. No singularity history is retained. */
-import * as b from './symbolic.js?v=0.15';
+import * as b from './symbolic.js?v=0.18';
 const EPS=1e-9, MAX_DEG=12;
 const n=b.constant, x=b.x;
 const approx=(a,z=0)=>Math.abs(a-z)<EPS;
@@ -79,8 +79,10 @@ export function orderedTerms(terms){
  const weight=e=>{const [coef,t]=coefficient(e);void coef;
   if(t?.t==='n')return [-Infinity,0];
   const p=rational(t);if(p&&p.q.length===1&&approx(p.q[0],1))return [degree(p.p),0];
+  if(t?.t==='p'&&t.b.t==='x')return [t.e,0];
+  if(t?.t==='f'&&t.f==='sqrt'&&t.arg.t==='x')return [.5,0];
   if(t?.t==='m'){
-   const mon=t.v.filter(a=>a.t==='x'||a.t==='p'&&a.b.t==='x'&&a.e>0).reduce((s,a)=>s+(a.t==='x'?1:a.e),0);
+   const mon=t.v.reduce((s,a)=>s+(a.t==='x'?1:a.t==='p'&&a.b.t==='x'?a.e:a.t==='f'&&a.f==='sqrt'&&a.arg.t==='x'?.5:0),0);
    return [mon,1];
   }
   return [0,2];

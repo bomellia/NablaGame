@@ -1,10 +1,10 @@
-import {solveInverse} from './inverse-rules.js?v=0.15';
+import {solveInverse} from './inverse-rules.js?v=0.18';
 import {displayNumber} from './number-format.js?v=0.15';
 /* Additional special-function and deferred symbolic algebra for the game.
    Never assume an unproved limit has a numeric value. */
-import * as base from './symbolic.js?v=0.15';
-import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.15';
-export * from './symbolic.js?v=0.15';
+import * as base from './symbolic.js?v=0.18';
+import {rationalNormalize,trigNormalize,orderedTerms} from './normalization.js?v=0.18';
+export * from './symbolic.js?v=0.18';
 const n=base.constant, X=base.x, add=base.add, pow=base.pow;
 // Canonicalize basic trigonometric quotients before they become large trees.
 // tan(a) has precisely the domain of sin(a)/cos(a); unlike cancelling x/x,
@@ -806,6 +806,9 @@ export function simplify(e){
     const reciprocal={sin:'csc',cos:'sec',csc:'sin',sec:'cos',tan:'cot',cot:'tan'}[inner.f];
     if(reciprocal)return f(reciprocal,inner.arg);
    }
+   // Use one representation for standalone roots, retaining the power
+   // form for trig roots used by the elliptic-integral rules.
+   if(e.e===.5&&!(inner.t==='f'&&['sin','cos'].includes(inner.f)))return normalized(f('sqrt',inner));
    return normalized(pow(inner,e.e));
   }
   case 'f':{

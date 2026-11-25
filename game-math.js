@@ -1,9 +1,9 @@
 /* Game-level complex arithmetic and certified transform rules.
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
-import * as R from './symbolic-extended.js?v=0.17';
+import * as R from './symbolic-extended.js?v=0.18';
 import {asymptoticLimit,periodicRange,trigExtrema} from './asymptotic.js?v=0.16';
-export * from './symbolic-extended.js?v=0.17';
+export * from './symbolic-extended.js?v=0.18';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
 const zero=e=>e?.t==='n'&&e.v===0;

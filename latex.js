@@ -1,5 +1,5 @@
 import {latexNumber} from './number-format.js?v=0.15';
-import {orderedTerms} from './normalization.js?v=0.15';
+import {orderedTerms} from './normalization.js?v=0.18';
 /** Pure AST-to-LaTeX presentation layer. This module never changes game math. */
 const small = value => Number.isFinite(value) && Math.abs(value)<1e-12;
 const ascii = value => String(value).replace(/[\\{}]/g,'');
