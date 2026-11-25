@@ -1,7 +1,7 @@
 import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.15';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.15';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.16';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;

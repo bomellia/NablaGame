@@ -2,7 +2,7 @@
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
 import * as R from './symbolic-extended.js?v=0.15';
-import {asymptoticLimit,periodicRange} from './asymptotic.js?v=0.15';
+import {asymptoticLimit,periodicRange,trigExtrema} from './asymptotic.js?v=0.16';
 export * from './symbolic-extended.js?v=0.15';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
@@ -101,6 +101,11 @@ export function display(e,wrap=false){
  return wrap?'('+out+')':out;
 }
 function realTreeLimit(e,point='plus',side='two'){
+ if(point==='plus'||point==='minus'){
+  const phaseExpr=point==='minus'?R.simplify(R.substituteNegX(e)):e;
+  const r=trigExtrema(phaseExpr,R.limit);
+  if(r&&r[0]!==r[1])return {type:'nonexistent'};
+ }
  const a=asymptoticLimit(e,point,side);
  if(a.type==='complex')return {type:'symbolic',expr:complex(n(a.re),n(a.im))};
  if(a.type==='complexInfinity')return {type:'infinity',sign:1};
@@ -121,6 +126,8 @@ export function limit(e,point='plus',side='two'){
 export function oscillatoryLimit(e,kind='sup'){
  e=realRepresentative(simplify(e));
  if(!isC(e)){
+  const bounds=trigExtrema(e,R.limit);
+  if(bounds){const v=bounds[kind==='sup'?1:0];return Number.isFinite(v)?{type:'finite',v}:{type:'infinity',sign:Math.sign(v)};}
   const q=asymptoticLimit(e,'plus','two');
   if(q.type==='complexInfinity')return {type:'unknown'};
   if(q.type==='complex')return {type:'symbolic',expr:complex(n(q.re),n(q.im))};

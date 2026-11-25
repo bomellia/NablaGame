@@ -203,3 +203,66 @@ export function periodicRange(e,realLimit){
  }
  return null;
 }
+
+// Exact extrema of c*sin(u)^a*cos(u)^b for integer a,b and a continuous
+// unbounded real phase u. Poles are approached on the punctured domain.
+// Unlike interval multiplication, this preserves the correlation sin²+cos²=1.
+function trigMonomial(e){
+ const powers={sin:[1,0],cos:[0,1],tan:[1,-1],cot:[-1,1],sec:[0,-1],csc:[-1,0]};
+ let coefficient=1,a=0,b=0,phase=null;
+ function visit(t,k=1){
+  if(!Number.isSafeInteger(k))return false;
+  if(t.t==='n'){coefficient*=t.v**k;return Number.isFinite(coefficient)&&coefficient!==0;}
+  if(t.t==='m')return t.v.every(v=>visit(v,k));
+  if(t.t==='p')return visit(t.b,k*t.e);
+  if(t.t!=='f'||!Object.hasOwn(powers,t.f))return false;
+  if(phase&&JSON.stringify(phase)!==JSON.stringify(t.arg))return false;
+  phase=t.arg;a+=k*powers[t.f][0];b+=k*powers[t.f][1];
+  return Number.isSafeInteger(a)&&Number.isSafeInteger(b);
+ }
+ return visit(e)&&phase?{coefficient,a,b,phase}:null;
+}
+export function trigExtrema(e,realLimit){
+ const m=trigMonomial(e);
+ if(m&&continuousTail(m.phase)&&realLimit(m.phase,'plus').type==='infinity'){
+  const {a,b,coefficient:c}=m;
+  // On each quadrant y=sin²(u) traverses (0,1). Magnitude is
+  // |c| y^(a/2)(1-y)^(b/2). Its only possible interior critical
+  // point is y=a/(a+b).
+  const values=[a<0?Infinity:a>0?0:1,b<0?Infinity:b>0?0:1];
+  if(a+b!==0){
+   const y=a/(a+b);
+   if(y>0&&y<1){const v=Math.exp((a*Math.log(y)+b*Math.log1p(-y))/2);if(!Number.isFinite(v)||v===0)return null;values.push(v);}
+  }
+  const lo=Math.min(...values)*Math.abs(c),hi=Math.max(...values)*Math.abs(c);
+  if(!Number.isFinite(lo)||Number.isNaN(hi))return null;
+  // A finite result must not be produced by floating-point overflow.
+  if(!Number.isFinite(hi)&&a>=0&&b>=0)return null;
+  if(a%2!==0||b%2!==0)return [-hi,hi];
+  return c<0?[-hi,-lo]:[lo,hi];
+ }
+ // Monotone transformations of a certified pair of extrema preserve them,
+ // including unbounded endpoints. Do not assume all intermediate values occur.
+ if(e.t==='a'){
+  const v=e.v.filter(t=>t.t!=='n');if(v.length!==1)return null;
+  const r=trigExtrema(v[0],realLimit);if(!r)return null;
+  const c=e.v.filter(t=>t.t==='n').reduce((s,t)=>s+t.v,0);
+  return Number.isFinite(c)?r.map(t=>t+c):null;
+ }
+ if(e.t==='m'){
+  const v=e.v.filter(t=>t.t!=='n');if(v.length!==1)return null;
+  const r=trigExtrema(v[0],realLimit);if(!r)return null;
+  const c=e.v.filter(t=>t.t==='n').reduce((s,t)=>s*t.v,1);
+  return Number.isFinite(c)&&c!==0?r.map(t=>t*c).sort((a,b)=>a-b):null;
+ }
+ if(e.t==='f'){
+  const r=trigExtrema(e.arg,realLimit);if(!r)return null;
+  if(e.f==='atan')return r.map(Math.atan);
+  if(e.f==='tanh')return r.map(Math.tanh);
+  if(e.f==='exp'){
+   const out=r.map(Math.exp);return out.some((v,i)=>!Number.isFinite(v)&&Number.isFinite(r[i]))?null:out;
+  }
+  if(e.f==='log'&&r[0]>0)return r.map(Math.log);
+ }
+ return null;
+}

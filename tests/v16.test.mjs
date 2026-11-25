@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {x,constant as n,fn,mul,div,pow,add,limit,oscillatoryLimit} from '../game-math.js';
+import {newGame,preview} from '../engine.js';
+const X=x(),s=fn('sin',X),c=fn('cos',X),f=div(mul(n(2),s),pow(c,3));
+const inf=sign=>({type:'infinity',sign}),v=v=>({type:'finite',v});
+test('reported screenshot: exact upper, lower and ordinary limits',()=>{assert.deepEqual(oscillatoryLimit(f,'inf'),inf(-1));assert.deepEqual(oscillatoryLimit(f,'sup'),inf(1));assert.deepEqual(limit(f,'plus'),{type:'nonexistent'});assert.deepEqual(limit(f,'minus'),{type:'nonexistent'});assert.deepEqual(limit(f,'zero'),v(0));});
+test('periodic poles keep their correct signs',()=>{for(const [e,lo,hi] of [[pow(c,-4),v(1),inf(1)],[mul(n(-2),pow(c,-4)),inf(-1),v(-2)],[div(pow(s,2),pow(c,4)),v(0),inf(1)],[fn('sec',X),inf(-1),inf(1)],[add(n(3),pow(fn('tan',X),2)),v(3),inf(1)],[div(n(1),mul(pow(s,2),pow(c,2))),v(4),inf(1)]]){assert.deepEqual(oscillatoryLimit(e,'inf'),lo);assert.deepEqual(oscillatoryLimit(e,'sup'),hi);}});
+test('no unbounded extrema for bounded phase',()=>{assert.notDeepEqual(oscillatoryLimit(fn('tan',fn('sin',X)),'sup'),inf(1));});
+test('lower limit actually wins from screenshot board',()=>{const g=newGame();g.hands[0][0]='LIMINF';g.boards[1]=[f];const p=preview(g,{cardIndex:0,owner:1,target:0});assert.ok(p.ok,p.reason);assert.equal(p.state.boards[1].length,0);assert.equal(p.state.winner,0);});
