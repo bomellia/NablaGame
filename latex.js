@@ -51,9 +51,10 @@ export function toLatex(e){
  if(!e||typeof e!=='object')return '\\text{?}';
  switch(e.t){
   case 'complex':return `${e.re.t==='n'&&e.re.v===0?'':toLatex(e.re)+' + '}i${round(toLatex(e.im))}`;
+  case 'preview':return '\\cdots'; // Display-only placeholder, never a game AST.
   case 'n':return numberLatex(e.v);
   case 'x':return 'x';
-  case 'a':return sumTerms(orderedTerms(e.v));
+  case 'a':return sumTerms(e.previewOrdered?e.v:orderedTerms(e.v));
   case 'm':return productLatex(e.v);
   case 'p':{
    if(e.e===1)return toLatex(e.b);

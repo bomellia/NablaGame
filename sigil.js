@@ -25,6 +25,7 @@ export function inscription(e,max=170){
  function walk(v,d=0){
   if(!v||d>24||--remaining<0)return '…';
   switch(v.t){
+   case 'preview':return '…';
    case 'x':return 'x';
    case 'n':return Number.isFinite(v.v)?displayNumber(v.v).replace(/-/g,'−'):'?';
    case 'a':return v.v.slice(0,50).map(z=>walk(z,d+1)).join(' + ').replace(/\+ −/g,'− ')+(v.v.length>50?' …':'');

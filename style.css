@@ -107,9 +107,8 @@ dialog{color:var(--paper);background:#211c17;border:1px solid var(--gold);paddin
 .basis .seal-art .sigil{width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1}
 .basis-equation{width:100%;height:100%;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#f2dfb9;font:17px Georgia,serif;line-height:1.25;border-top:1px solid #b29b7026;padding:1px 0}
 .basis-equation .card-ink{white-space:nowrap}
-.equation-overflow{display:none;font:19px Georgia}
-.equation-abbreviated .card-ink{visibility:hidden;position:absolute;pointer-events:none}
-.equation-abbreviated .equation-overflow{display:block}
+/* v0.28: abbreviations are real mathematical previews, never a hidden equation. */
+.basis-equation.equation-abbreviated .card-ink{visibility:visible;position:static;pointer-events:auto}
 .basis .seal-index{position:static;line-height:1}
 .seal-geometry{opacity:.88}.seal-geometry.fine{opacity:.42}
 .break-ghost .sigil{width:100%;height:100%}
