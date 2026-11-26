@@ -1,3 +1,4 @@
+import {rationalTrigExtrema} from './trig-rational.js?v=0.22';
 // Structural asymptotic certificates. No numeric sampling of a limit.
 // The comparison variable t tends to +infinity; x is +/-t or +/-1/t.
 // A scale is exp(q2*t²+q1*t)*t^p*(log t)^l.
@@ -223,6 +224,8 @@ function trigMonomial(e){
  return visit(e)&&phase?{coefficient,a,b,phase}:null;
 }
 export function trigExtrema(e,realLimit){
+ const rational=rationalTrigExtrema(e,phase=>continuousTail(phase)&&realLimit(phase,'plus').type==='infinity');
+ if(rational)return rational;
  const m=trigMonomial(e);
  if(m&&continuousTail(m.phase)&&realLimit(m.phase,'plus').type==='infinity'){
   const {a,b,coefficient:c}=m;
