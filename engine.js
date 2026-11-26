@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.15';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.20';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation} from './game-math.js?v=0.18';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose} from './game-math.js?v=0.20';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -71,6 +71,13 @@ export function normalizeGame(game){
   if(state.pending&&(state.finished||state.pending.phase==='chain'&&
     (state.boards[state.pending.owner].length!==game.boards[state.pending.owner].length||
      !state.boards[state.pending.owner][state.pending.target])))endTurn(state,state.turn);
+  // Add the two new cards once to an existing saved deck, without resetting play.
+  if(!state.compositionDeck){
+    const count=[...state.deck,...state.hands.flat(),...(state.pending?.spent||[])].filter(id=>id==='COMPOSE').length;
+    for(let i=count;i<2;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,'COMPOSE');
+    state.compositionDeck=true;
+  }
+  if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
   state.version=14;
   return state;
 }
@@ -80,7 +87,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const opening=initialBoard(random);
   return {version:14,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,pending:null,extended,difficulty,
+    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -104,7 +111,7 @@ export function validate(s,move) {
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
     if(move.partnerIndex===move.cardIndex || !Number.isInteger(move.partnerIndex) || !FUNCTION_CARDS.includes(s.hands[actor][move.partnerIndex]))throw new Unsupported('別の関数カードが必要です');
-    if(cardId==='DIV'&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported('除算の向きを指定してください');
+    if(['DIV','COMPOSE'].includes(cardId)&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported(cardId==='COMPOSE'?'合成順序（外側・内側）を指定してください':'除算の向きを指定してください');
   }
   if(card.kind==='constant') {
     if(!CONSTANTS.includes(move.C))throw new Unsupported('定数Cを選択してください');
@@ -118,6 +125,7 @@ function opSingle(id,basis,move,partner) {
     case 'DIFF':return safeDerivative(basis);
     case 'INTEGRATE':return safeIntegral(basis,move.C);
     case 'MUL':return mul(basis,partner);
+    case 'COMPOSE':return move.direction==='cardOverBasis'?compose(partner,basis):compose(basis,partner);
     case 'DIV': {
       const numerator = move.direction==='cardOverBasis'?partner:basis;
       const denominator= move.direction==='cardOverBasis'?basis:partner;
@@ -236,8 +244,8 @@ export function applyMove(s,move,trace=null) {
     ns.pending={phase:'chain',owner:move.owner,target:move.target,spent};
     return ns;
   }
-  if(!ns.finished&&s.pending?.phase!=='bonus'&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]?.kind!=='function')){
-    ns.pending={phase:'bonus',spent:[...(s.pending?.spent||[]),...spent]};
+  if(!ns.finished&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
+    ns.pending={phase:'bonus',bonusCount:(s.pending?.bonusCount||0)+1,spent:[...(s.pending?.spent||[]),...spent]};
     return ns;
   }
   return endTurn(ns,actor,spent);
@@ -266,7 +274,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         if(card.kind==='binary') {
           choices=[];
           for(let j=0;j<s.hands[s.turn].length;j++) if(i!==j&&FUNCTION_CARDS.includes(s.hands[s.turn][j]))
-            for(const direction of (card.id==='DIV'?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
+            for(const direction of (['DIV','COMPOSE'].includes(card.id)?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
         }
         if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(card.id==='PLUS_C'&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
@@ -324,7 +332,7 @@ export function chooseComMove(s) {
     // The free follow-up is optional. Spend cards only for immediate gains
     // or for a winning action; otherwise keep them for the next turn.
     if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0))return {pass:true};
-    if(s.pending.phase==='chain'&&usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard')>scoreMove(s,a,a.nextState,'hard')?b:a);}
+    if(usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard')>scoreMove(s,a,a.nextState,'hard')?b:a);}
     const {nextState,scoreDelta,...chosen}=best;
     return chosen;
   }

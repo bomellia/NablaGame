@@ -7,7 +7,7 @@ const fixture=()=>{const s=newGame({random:()=>.37});s.boards=[[X],[sin,X,n(1)]]
 const inventory=s=>[...s.deck,...s.hands.flat(),...(s.pending?.spent||[])].sort();
 const go=(s,m)=>{const p=preview(s,m);assert.ok(p.ok,p.reason);return p.state;};
 const first={cardIndex:0,partnerIndex:1,owner:1,target:0,continue:true};
-test('two-step combo with delayed draw, then one elimination bonus',()=>{
+test('two-step combo with delayed draw, then repeated elimination bonuses',()=>{
  const s=fixture(),a=go(s,first);
  assert.equal(a.pending.phase,'chain');assert.equal(a.turn,0);assert.equal(a.turns,0);assert.equal(a.hands[0].length,6);
  assert.deepEqual(a.deck,s.deck);assert.deepEqual(inventory(a),inventory(s));
@@ -17,7 +17,7 @@ test('two-step combo with delayed draw, then one elimination bonus',()=>{
  assert.deepEqual(inventory(b),inventory(s));assert.equal(normalizeGame(b).pending.phase,'bonus');
  assert.equal(preview(b,{cardIndex:1,owner:0}).ok,false);
  assert.equal(preview(b,{cardIndex:0,owner:1,target:1,continue:true}).ok,false);
- const c=go(b,{cardIndex:0,owner:1,target:1});assert.equal(c.pending,null);assert.equal(c.turn,1);assert.equal(c.turns,1);assert.equal(c.hands[0].length,8);assert.equal(c.boards[1].length,1);assert.deepEqual(inventory(c),inventory(s));
+ const next=go(b,{cardIndex:0,owner:1,target:1});assert.equal(next.pending.phase,'bonus');assert.equal(next.pending.bonusCount,2);const c=go(next,{pass:true});assert.equal(c.turn,1);assert.equal(c.turns,1);assert.equal(c.hands[0].length,8);assert.equal(c.boards[1].length,1);assert.deepEqual(inventory(c),inventory(s));
 });
 test('optional pass and victory settle all consumed cards',()=>{
  const s=fixture(),a=go(s,first),b=go(a,{cardIndex:0,owner:1,target:0});

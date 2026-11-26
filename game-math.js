@@ -78,6 +78,32 @@ export function fromCard(id){
   default:return R.fromCard(id);
  }
 }
+// Structural substitution, using the same constructors as other cards.
+export function compose(outer,inner){
+ const g=simplify(inner);
+ function substitute(e){
+  switch(e.t){
+   case 'n':return e;
+   case 'x':return g;
+   case 'a':return add(...e.v.map(substitute));
+   case 'm':return mul(...e.v.map(substitute));
+   case 'p':return pow(substitute(e.b),e.e);
+   case 'complex':return add(substitute(e.re),mul(complex(Z(),O()),substitute(e.im)));
+   case 'f':{
+    const u=simplify(substitute(e.arg));
+    if(isC(u)&&['sin','cos','tan'].includes(e.f)){
+     const [a,b]=pair(u);
+     const sin=complex(times(F('sin',a),F('cosh',b)),times(F('cos',a),F('sinh',b)));
+     const cos=complex(times(F('cos',a),F('cosh',b)),times(n(-1),F('sin',a),F('sinh',b)));
+     return e.f==='sin'?sin:e.f==='cos'?cos:div(sin,cos);
+    }
+    return fn(e.f,u);
+   }
+   default:fail('この関数の合成は未対応です');
+  }
+ }
+ return simplify(substitute(simplify(outer)));
+}
 export function derivative(e){return isC(e)?complex(R.derivative(e.re),R.derivative(e.im)):R.derivative(e);}
 export function integrate(e,C=0){
  if(isC(e))return complex(integrate(e.re,C),integrate(e.im,0));

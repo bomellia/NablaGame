@@ -22,6 +22,7 @@ export const CARDS = [
   {id:'INTEGRATE',label:'∫dx',kind:'constant',count:8,description:'積分。積分定数Cを選べる'},
   {id:'MUL',label:'×',kind:'binary',count:5,description:'関数カードを使用して乗算'},
   {id:'DIV',label:'÷',kind:'binary',count:5,description:'関数カードを使用して除算'},
+  {id:'COMPOSE',label:'∘',kind:'binary',count:2,description:'場の基底と関数カードを合成。外側→内側の順に選択'},
   {id:'LIM_PLUS',label:'lim +∞',kind:'single',count:3,description:'x→+∞ の極限'},
   {id:'LIM_MINUS',label:'lim −∞',kind:'single',count:3,description:'x→−∞ の極限'},
   {id:'LIM_ZERO',label:'lim 0',kind:'limitZero',count:4,description:'x→0の極限。片側も選択可能'},

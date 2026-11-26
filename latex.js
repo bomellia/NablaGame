@@ -103,7 +103,7 @@ const labels={
  NEGEXP:"e^{-x}",TAN:"\\tan x",LN_X:"\\ln x",RECIP_X:"\\frac1x",ROOT_X:"\\sqrt{x}",CAUCHY:"\\frac{1}{1+x^2}",GAUSS:"e^{-x^2}",EXP_OP:"\\exp",SQUARE:"\\square^2",INT_HALF:"\\int_0^\\infty",INT_ALL:"\\int_{-\\infty}^\\infty",LAPLACE:"\\mathcal L",INV_LAPLACE:"\\mathcal L^{-1}",FOURIER:"\\mathcal F",INV_FOURIER:"\\mathcal F^{-1}",
  ZERO:'0',ONE:'1',X:'x',X2:'x^2',EXP:'e^x',SIN:'\\sin x',COS:'\\cos x',
  NABLA:'\\nabla',DELTA:'\\Delta',DIFF:'\\frac{\\mathrm{d}}{\\mathrm{d}x}',
- INTEGRATE:'\\int\\!\\mathrm{d}x',MUL:'\\times',DIV:'\\div',
+ INTEGRATE:'\\int\\!\\mathrm{d}x',MUL:'\\times',DIV:'\\div',COMPOSE:'\\circ',
  LIM_PLUS:'\\lim_{x\\to+\\infty}',LIM_MINUS:'\\lim_{x\\to-\\infty}',
  LIM_ZERO:'\\lim_{x\\to0}',LIMSUP:'\\limsup',LIMINF:'\\liminf',
  SQRT:'\\sqrt{\\phantom{x}}',INVERSE:'f^{-1}',LOG:'\\ln',

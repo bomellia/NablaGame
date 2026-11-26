@@ -189,3 +189,12 @@ main{display:flex;flex-direction:column;gap:9px}
 .hand .card.swap-selected{outline:2px solid #f2d086;outline-offset:-3px;background:#534b35}
 @media(min-width:651px){.hand{height:154px}.hand .card{min-height:70px}.hand .card .card-symbol{font-size:20px}}
 @media(max-width:650px){main{grid-template-rows:minmax(0,1fr) minmax(0,1fr) minmax(0,1.55fr) minmax(0,1.35fr)!important}.hand .card{padding:2px 3px}.hand .card .card-number,.hand .card .card-type{display:none}.hand .card .card-symbol{font-size:clamp(13px,3.8vw,19px);align-self:center;margin:auto 0}.header-actions{gap:3px}}
+
+/* v0.20: action labels must fit on one row even when three buttons are present. */
+.action-buttons.confirm-actions[data-count="3"]{grid-template-columns:minmax(0, .8fr) minmax(0, 1.35fr) minmax(0, 1.35fr)!important}
+.action-buttons.confirm-actions[data-count="2"]{grid-template-columns:minmax(0, 1fr) minmax(0, 2fr)!important}
+.action-buttons:not(.confirm-actions){display:flex!important;justify-content:flex-start;gap:5px}
+.action-buttons:not(.confirm-actions)>button{flex:1 1 0;min-width:0!important}
+.action-buttons>button{white-space:normal!important;overflow-wrap:anywhere;line-height:1.2}
+.phase-note{font-size:11px;color:#8ddac9;line-height:1.4}
+@media(max-width:650px){.preview-stage .action-panel{grid-template-rows:min-content minmax(0,1fr) 40px}.preview-stage .action-buttons{height:40px;min-height:40px}.preview-stage .action-buttons>button{height:40px;min-height:40px;padding:3px;font-size:11px}.flow-steps span{white-space:normal}}
