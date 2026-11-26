@@ -4,6 +4,7 @@ import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.28'
 import {previewVariants} from './formula-preview.js?v=0.29';
 import {rune,sealMarkup,logRune} from './sigil.js?v=0.30';
 import {fitMath} from './fit-math.js?v=0.29';
+import {transitionBoard,animationMarkup} from './seal-animation.js?v=0.31';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
 const basisFormula=e=>mathMarkup('\\displaystyle '+toLatex(e),display(e));
@@ -11,6 +12,19 @@ const card=id=>mathMarkup(cardLatex(id),getCard(id).label);
 const name=o=>o===1?'C':'P';
 const fresh=()=>({cardIndex:-1,owner:null,target:null,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard',operands:[]});
 let game,selection=fresh(),thinking=false,gameSerial=0,comWorker=null,comScene=null,lastScene=null,message='',cached=null,swapSelection=null;
+let sealTransitions=[[],[]];
+const motionAllowed=()=>!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+function recordSealChanges(move,result){
+ if(move.owner==null||move.pass||move.discard||!result?.ok||!motionAllowed())return;
+ const owner=move.owner;
+ sealTransitions[owner]=transitionBoard(game.boards[owner],result.state.boards[owner],result.effect?.removed||[],sealTransitions[owner]);
+}
+function sealArt(e,owner,index){
+ const transition=sealTransitions[owner][index];
+ const animation=motionAllowed()?animationMarkup(transition):'';
+ if(!animation)sealTransitions[owner][index]=null;
+ return '<span class="seal-art'+(animation?' tracing':'')+'">'+animation+sealMarkup(e,'board-'+owner+'-'+index)+'</span>';
+}
 const playerActive=()=>game.turn===0&&!game.finished&&!thinking;
 const currentCard=()=>getCard(game.hands[0][selection.cardIndex]);
 const lockedCard=c=>!!game.pending&&(c?.kind==='function'||game.pending.phase==='chain'&&c?.kind==='global');
@@ -25,13 +39,13 @@ function currentMove(){
 function resultFor(move){if(!move)return null;const key=JSON.stringify(move);if(cached?.game===game&&cached.key===key)return cached.result;const result=preview(game,move);cached={game,key,result};return result;}
 function save(){try{localStorage.setItem('basis-duel-grimoire-v14',JSON.stringify(game));}catch{}}
 function load(){try{const s=JSON.parse(localStorage.getItem('basis-duel-grimoire-v14')||localStorage.getItem('basis-duel-save-v14'));if(s&&s.version===14&&s.boards?.length===2&&Array.isArray(s.hands)&&Array.isArray(s.deck)&&s.hands.every((h,i)=>h.length+(s.pending&&i===s.turn?(s.pending.spent?.length||0):0)===8))return normalizeGame(s);}catch{}return null;}
-function start(){gameSerial++;if(comWorker){comWorker.terminate();comWorker=null;}thinking=false;comScene=null;lastScene=null;selection=fresh();swapSelection=null;message='';cached=null;game=newGame({extended:$('extended').checked,difficulty:$('difficulty').value});save();render();}
+function start(){gameSerial++;sealTransitions=[[],[]];if(comWorker){comWorker.terminate();comWorker=null;}thinking=false;comScene=null;lastScene=null;selection=fresh();swapSelection=null;message='';cached=null;game=newGame({extended:$('extended').checked,difficulty:$('difficulty').value});save();render();}
 function isFieldCard(c){return c&&['function','global'].includes(c.kind);}
 function fieldMarkup(owner){
  const board=game.boards[owner],c=currentCard(),active=playerActive(),fieldMode=active&&isFieldCard(c);
  const marked=comScene?.stage>=2&&comScene.move?.owner===owner;
  const selected=i=>active&&(selection.owner===owner&&selection.target===i||game.pending?.phase==='chain'&&game.pending.owner===owner&&game.pending.target===i)||marked&&comScene.move?.target===i;
- return '<div class="field-head"><div class="person"><div class="avatar">'+name(owner)+'</div><div class="dimension"><strong>'+board.length+'</strong><span>'+rune('SEALS')+'</span></div></div>'+(fieldMode?'<button class="field-pick" data-field="'+owner+'" type="button" aria-label="Select entire field">◎ '+rune('FIELD')+'</button>':'')+'</div><div class="bases '+(marked&&comScene.move.target==null?'com-field-target':'')+'">'+(board.length?board.map((e,i)=>'<button type="button" class="basis '+(selected(i)?'selected ':'')+(marked&&comScene.move.target===i?'com-target ':'')+(active&&c&&!fieldMode?'target-ready ':'')+'" data-owner="'+owner+'" data-index="'+i+'" aria-label="'+name(owner)+' '+(i+1)+' '+esc(display(e))+'" '+(thinking?'disabled':'')+'>'+'<span class="seal-art">'+sealMarkup(e,'board-'+owner+'-'+i)+'</span><span class="basis-equation" data-previews="'+esc(JSON.stringify(previewVariants(e)))+'"><span class="card-ink">'+basisFormula(e)+'</span></span><span class="seal-index">'+String(i+1).padStart(2,'0')+'</span></button>').join(''):'<div class="basis-empty" aria-label="Field destroyed">◇ '+rune('VOID')+'</div>')+'</div>';
+ return '<div class="field-head"><div class="person"><div class="avatar">'+name(owner)+'</div><div class="dimension"><strong>'+board.length+'</strong><span>'+rune('SEALS')+'</span></div></div>'+(fieldMode?'<button class="field-pick" data-field="'+owner+'" type="button" aria-label="Select entire field">◎ '+rune('FIELD')+'</button>':'')+'</div><div class="bases '+(marked&&comScene.move.target==null?'com-field-target':'')+'">'+(board.length?board.map((e,i)=>'<button type="button" class="basis '+(selected(i)?'selected ':'')+(marked&&comScene.move.target===i?'com-target ':'')+(active&&c&&!fieldMode?'target-ready ':'')+'" data-owner="'+owner+'" data-index="'+i+'" aria-label="'+name(owner)+' '+(i+1)+' '+esc(display(e))+'" '+(thinking?'disabled':'')+'>'+sealArt(e,owner,i)+'<span class="basis-equation" data-previews="'+esc(JSON.stringify(previewVariants(e)))+'"><span class="card-ink">'+basisFormula(e)+'</span></span><span class="seal-index">'+String(i+1).padStart(2,'0')+'</span></button>').join(''):'<div class="basis-empty" aria-label="Field destroyed">◇ '+rune('VOID')+'</div>')+'</div>';
 }
 function handMarkup(){return game.hands[0].map((id,i)=>{const c=getCard(id),material=isBinary()&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(id),order=selection.operands.findIndex(z=>z.kind==='hand'&&z.index===i);return '<button type="button" '+(playerActive()&&(!lockedCard(c)||material)?'':'disabled')+' class="card '+esc(c.kind)+' '+(c.expansion?'expansion ':'')+(swapSelection!==null?(swapSelection.includes(i)?'selected swap-selected':''):(selection.cardIndex===i||order>=0?'selected':''))+' '+(material?'operand-choice':'')+'" data-card="'+i+'" aria-label="'+esc(id)+'"><span class="card-type">'+(c.kind==='function'?'◇':c.kind==='global'?'◎':'✧')+'</span><span class="card-symbol"><span class="card-ink">'+card(id)+'</span></span><span class="card-number">'+(order>=0?order+1:String(i+1).padStart(2,'0'))+'</span></button>';}).join('');}
 function operandsHtml(state,move){if(move.pass)return rune('END');const id=state.hands[state.turn][move.cardIndex],c=getCard(id);if(move.discard)return (move.cardIndices??[move.cardIndex]).map(i=>card(state.hands[state.turn][i])).join(' / ');if(c.kind==='binary'){const a=formula(state.boards[move.owner][move.target]),b=card(state.hands[state.turn][move.partnerIndex]);return (move.direction==='cardOverBasis'?b:a)+' <span class="op-sign">'+card(id)+'</span> '+(move.direction==='cardOverBasis'?a:b);}if(isFieldCard(c))return card(id)+' → '+name(move.owner)+' ◎';return card(id)+' → '+formula(state.boards[move.owner][move.target]);}
@@ -88,7 +102,7 @@ function render(){
 // Animate the exact indices removed by rank reduction. Ghosts retain the old
 // seal on screen while the new board is rendered, and never intercept input.
 function animateBreak(move,result){
- if(!result?.effect?.erased||move.owner==null||typeof document.createElement!=='function'||!document.body)return;
+ if(!motionAllowed()||!result?.effect?.erased||move.owner==null||typeof document.createElement!=='function'||!document.body)return;
  const field=$(move.owner?'opponent':'player'),indices=result.effect.removed||[];
  for(const i of indices){
   const old=field.querySelector('[data-index="'+i+'"]');if(!old)continue;
@@ -98,31 +112,25 @@ function animateBreak(move,result){
   // Fracture only the geometric seal, not the separate equation label.
   for(let j=0;j<4;j++){
    const fragment=document.createElement('div');fragment.className='seal-fragment fragment-'+j;
-   fragment.innerHTML=art.innerHTML;ghost.appendChild(fragment);
+   fragment.innerHTML=art.querySelector(':scope > .sigil')?.outerHTML||sealMarkup(game.boards[move.owner][i]);ghost.appendChild(fragment);
   }
   for(let j=0;j<8;j++){const shard=document.createElement('i');shard.style.setProperty('--a',j*45+'deg');ghost.appendChild(shard);}
   document.body.appendChild(ghost);setTimeout(()=>ghost.remove(),850);
  }
- if(result.state.boards[move.owner].length===0){field.classList.add('field-destroyed');}
-}
-function animateChange(move,result){
- if(move.owner==null||!result?.ok)return;
- const field=$(move.owner?'opponent':'player');
- if(result.delta[move.owner]>0){field.querySelector('.basis:last-child')?.classList.add('inscribed');}
- else if(!result.effect?.erased&&move.target!=null)field.querySelector('[data-index="'+move.target+'"]')?.classList.add('rewritten');
- if(result.state.boards[move.owner].length===0)field.classList.add('field-destroyed');
-}
-function takeTurn(move,result=resultFor(move)){if(!result?.ok){message=result?.reason||'操作できません';render();return;}animateBreak(move,result);game=result.state;selection=fresh();swapSelection=null;message='';lastScene=null;cached=null;save();render();runCom();animateChange(move,result);}
+ }
+function flashDestroyed(move,result){if(move.owner!=null&&result.effect?.erased&&result.state.boards[move.owner].length===0)$(move.owner?'opponent':'player').classList.add('field-destroyed');}
+function takeTurn(move,result=resultFor(move)){if(!result?.ok){message=result?.reason||'操作できません';render();return;}animateBreak(move,result);recordSealChanges(move,result);game=result.state;selection=fresh();swapSelection=null;message='';lastScene=null;cached=null;save();render();flashDestroyed(move,result);runCom();}
 function chooseCard(i){if(lockedCard(getCard(game.hands[0][i])))return;selection=fresh();selection.cardIndex=i;selection.C=currentCard()?.id==='PLUS_C'?1:0;message='';lastScene=null;render();}
 function selectOperand(z){if(game.pending?.phase==='chain'&&z.kind==='basis'&&(z.owner!==game.pending.owner||z.index!==game.pending.target)){message='同じ基底を選択してください。';render();return;}if(selection.operands.length>=2)return;if(selection.operands.some(a=>a.kind===z.kind)){message='場の基底と手札の関数カードを1枚ずつ選択してください。';render();return;}selection.operands.push(z);if(z.kind==='basis'){selection.owner=z.owner;selection.target=z.index;}else selection.partnerIndex=z.index;selection.direction=selection.operands[0].kind==='hand'?'cardOverBasis':'basisOverCard';message='';render();}
 function selectTarget(owner,index){if(swapSelection!==null)return;if(!playerActive()){if(!thinking&&index!=null)showFormula(owner,index);return;}const c=currentCard();if(!c){if(index!=null)showFormula(owner,index);return;}if(game.pending?.phase==='chain'&&(owner!==game.pending.owner||index!==game.pending.target)){message='同じ基底を選択してください。';render();return;}if(c.kind==='binary'){if(index!=null)selectOperand({kind:'basis',owner,index});return;}if(!isFieldCard(c)&&index==null)return;selection.owner=owner;selection.target=isFieldCard(c)?null:index;message='';const move=currentMove();render();}
 function hint(){if(!playerActive())return;const moves=legalMoves(game,{limit:1000,perCardOwner:10});const best=[...moves].filter(m=>!m.discard&&!m.pass).sort((a,b)=>{const da=a.scoreDelta||[0,0],db=b.scoreDelta||[0,0];return(db[0]-db[1]*1.3)-(da[0]-da[1]*1.3);})[0];if(!best){message=game.pending?'追加できる演算がありません。ターンを終了してください。':'合法手が見つかりません。カード交換を試してください。';render();return;}selection={...fresh(),...best,target:best.target??null};if(currentCard().kind==='binary'){const a={kind:'basis',owner:best.owner,index:best.target},b={kind:'hand',index:best.partnerIndex};selection.operands=best.direction==='cardOverBasis'?[b,a]:[a,b];}else{message='提案した対象を確認して実行します。';}render();}
 function runCom(){if(game.finished||game.turn!==1)return;const serial=gameSerial;thinking=true;comScene=null;render();let ended=false,watchdog,worker;
  const valid=()=>serial===gameSerial&&game.turn===1&&!game.finished;
- const finishScene=()=>{if(!valid()||!comScene)return;const scene=comScene;animateBreak(scene.move,scene.result);comScene=null;thinking=false;game=scene.result.state;lastScene=scene.result.description;selection=fresh();message='';cached=null;save();render();if(game.turn===1&&!game.finished)runCom();animateChange(scene.move,scene.result);};
+ const finishScene=()=>{if(!valid()||!comScene)return;const scene=comScene;animateBreak(scene.move,scene.result);recordSealChanges(scene.move,scene.result);comScene=null;thinking=false;game=scene.result.state;lastScene=scene.result.description;selection=fresh();message='';cached=null;save();render();flashDestroyed(scene.move,scene.result);if(game.turn===1&&!game.finished)runCom();};
  const show=(move)=>{if(ended)return;ended=true;clearTimeout(watchdog);if(worker){worker.terminate();if(comWorker===worker)comWorker=null;}if(!valid())return;let result;try{result=move?preview(game,move):null;if(!result?.ok){move=game.pending?{pass:true}:{discard:true,cardIndex:0};result=preview(game,move);}}catch{}if(!result?.ok){thinking=false;game.log.unshift('COMの操作を確定できません。新規対戦を開始してください。');render();return;}const scene={state:game,move,result,stage:1,finish:finishScene};comScene=scene;render();setTimeout(()=>{if(!valid()||comScene!==scene)return;scene.stage=2;render();setTimeout(()=>{if(!valid()||comScene!==scene)return;scene.stage=3;render();setTimeout(()=>{if(comScene===scene)finishScene();},800);},650);},550);};
  try{worker=new Worker('./com-worker.js?v=0.23',{type:'module'});comWorker=worker;watchdog=setTimeout(()=>show(null),5000);worker.onmessage=e=>show(e.data?.move||null);worker.onerror=()=>show(null);worker.postMessage(game);}catch{setTimeout(()=>{if(!valid()||ended)return;let m=null;try{m=chooseComMove(game);}catch{}show(m);},80);}
 }
+document.addEventListener('animationend',e=>{if(e.animationName!=='seal-overlay-life'||!e.target.classList?.contains('seal-animation'))return;const art=e.target.parentElement;art?.classList.remove('tracing');e.target.remove();});
 document.addEventListener('click',e=>{const el=e.target.closest('button');if(!el){const field=e.target.closest('#opponent,#player');if(field&&playerActive()&&isFieldCard(currentCard()))selectTarget(field.id==='opponent'?1:0,null);return;}if(el.dataset.card!==undefined&&playerActive()){const i=+el.dataset.card;if(swapSelection!==null){swapSelection=swapSelection.includes(i)?swapSelection.filter(j=>j!==i):[...swapSelection,i];render();return;}if(isBinary()&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(game.hands[0][i]))selectOperand({kind:'hand',index:i});else if(i===selection.cardIndex){selection=fresh();message='';render();}else chooseCard(i);return;}if(el.dataset.field!==undefined){selectTarget(+el.dataset.field,null);return;}if(el.dataset.owner!==undefined){selectTarget(+el.dataset.owner,+el.dataset.index);return;}switch(el.id){case 'chain-btn':if(playerActive()&&currentMove())takeTurn({...currentMove(),continue:true});break;case 'pass-btn':if(playerActive()&&game.pending)takeTurn({pass:true});break;case 'act-btn':if(playerActive()&&currentMove())takeTurn(currentMove());break;case 'cancel-btn':swapSelection=null;selection=fresh();message='';render();break;case 'inspect-btn':showFormula(selection.owner,selection.target);break;case 'skip-com':comScene?.finish();break;case 'hint-btn':hint();break;case 'swap-btn':if(playerActive()&&!game.pending){swapSelection=currentCard()?[selection.cardIndex]:[];selection=fresh();message='';render();}break;case 'swap-confirm':if(playerActive()&&swapSelection?.length)takeTurn({discard:true,cardIndex:swapSelection[0],cardIndices:[...swapSelection]});break;case 'restart-btn':start();break;case 'resign-btn':if(!game.finished&&confirm(rune('YIELD')+' ?')){gameSerial++;if(comWorker){comWorker.terminate();comWorker=null;}thinking=false;comScene=null;swapSelection=null;game=resign(game);save();render();}break;case 'new-btn':if(game.finished||confirm(rune('RENEW')+' ?'))start();break;case 'help-btn':$('help-dialog').showModal();break;case 'settings-btn':$('settings-panel').classList.toggle('show');break;case 'history-btn':$('log-dialog').showModal();break;case 'close-log':$('log-dialog').close();break;case 'close-formula':$('formula-dialog').close();break;case 'close-help':$('help-dialog').close();break;}});
 document.addEventListener('change',e=>{if(e.target.id==='constant-select'){selection.C=+e.target.value;selection.owner=null;selection.target=null;message='';render();}if(e.target.id==='side-select'){selection.side=e.target.value;selection.owner=null;selection.target=null;message='';render();}if(e.target.id==='difficulty'){game.difficulty=e.target.value;save();}});
 const prior=load();if(prior){game=prior;save();$('difficulty').value=prior.difficulty||'normal';$('extended').checked=!!prior.extended;render();if(game.turn===1&&!game.finished)runCom();}else start();window.addEventListener('load',()=>{if(game)render();});
