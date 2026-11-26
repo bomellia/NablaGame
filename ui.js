@@ -1,10 +1,11 @@
 import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display,resign} from './engine.js?v=0.23';
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.20';
 import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.20';
-import {rune,sealMarkup,sealSize,profile,logRune} from './sigil.js?v=0.26';
-import {fitMath} from './fit-math.js?v=0.24';
+import {rune,sealMarkup,logRune} from './sigil.js?v=0.27';
+import {fitMath} from './fit-math.js?v=0.27';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
+const basisFormula=e=>mathMarkup('\\displaystyle '+toLatex(e),display(e));
 const card=id=>mathMarkup(cardLatex(id),getCard(id).label);
 const name=o=>o===1?'C':'P';
 const fresh=()=>({cardIndex:-1,owner:null,target:null,partnerIndex:-1,C:0,side:'two',direction:'basisOverCard',operands:[]});
@@ -29,12 +30,12 @@ function fieldMarkup(owner){
  const board=game.boards[owner],c=currentCard(),active=playerActive(),fieldMode=active&&isFieldCard(c);
  const marked=comScene?.stage>=2&&comScene.move?.owner===owner;
  const selected=i=>active&&(selection.owner===owner&&selection.target===i||game.pending?.phase==='chain'&&game.pending.owner===owner&&game.pending.target===i)||marked&&comScene.move?.target===i;
- return '<div class="field-head"><div class="person"><div class="avatar">'+name(owner)+'</div><div class="dimension"><strong>'+board.length+'</strong><span>'+rune('SEALS')+'</span></div></div>'+(fieldMode?'<button class="field-pick" data-field="'+owner+'" type="button" aria-label="Select entire field">◎ '+rune('FIELD')+'</button>':'')+'</div><div class="bases '+(marked&&comScene.move.target==null?'com-field-target':'')+'">'+(board.length?board.map((e,i)=>'<button type="button" class="basis '+(selected(i)?'selected ':'')+(marked&&comScene.move.target===i?'com-target ':'')+(active&&c&&!fieldMode?'target-ready ':'')+'" style="--seal-scale:'+sealSize(e).toFixed(3)+'" data-owner="'+owner+'" data-index="'+i+'" aria-label="'+name(owner)+' '+(i+1)+' '+esc(display(e))+'" '+(thinking?'disabled':'')+'>'+sealMarkup(e,'board-'+owner+'-'+i)+'<span class="seal-index">'+String(i+1).padStart(2,'0')+'</span></button>').join(''):'<div class="basis-empty" aria-label="Field destroyed">◇ '+rune('VOID')+'</div>')+'</div>';
+ return '<div class="field-head"><div class="person"><div class="avatar">'+name(owner)+'</div><div class="dimension"><strong>'+board.length+'</strong><span>'+rune('SEALS')+'</span></div></div>'+(fieldMode?'<button class="field-pick" data-field="'+owner+'" type="button" aria-label="Select entire field">◎ '+rune('FIELD')+'</button>':'')+'</div><div class="bases '+(marked&&comScene.move.target==null?'com-field-target':'')+'">'+(board.length?board.map((e,i)=>'<button type="button" class="basis '+(selected(i)?'selected ':'')+(marked&&comScene.move.target===i?'com-target ':'')+(active&&c&&!fieldMode?'target-ready ':'')+'" data-owner="'+owner+'" data-index="'+i+'" aria-label="'+name(owner)+' '+(i+1)+' '+esc(display(e))+'" '+(thinking?'disabled':'')+'>'+'<span class="seal-art">'+sealMarkup(e,'board-'+owner+'-'+i)+'</span><span class="basis-equation"><span class="card-ink">'+basisFormula(e)+'</span><span class="equation-overflow" aria-hidden="true">…</span></span><span class="seal-index">'+String(i+1).padStart(2,'0')+'</span></button>').join(''):'<div class="basis-empty" aria-label="Field destroyed">◇ '+rune('VOID')+'</div>')+'</div>';
 }
 function handMarkup(){return game.hands[0].map((id,i)=>{const c=getCard(id),material=isBinary()&&i!==selection.cardIndex&&FUNCTION_CARDS.includes(id),order=selection.operands.findIndex(z=>z.kind==='hand'&&z.index===i);return '<button type="button" '+(playerActive()&&(!lockedCard(c)||material)?'':'disabled')+' class="card '+esc(c.kind)+' '+(c.expansion?'expansion ':'')+(swapSelection!==null?(swapSelection.includes(i)?'selected swap-selected':''):(selection.cardIndex===i||order>=0?'selected':''))+' '+(material?'operand-choice':'')+'" data-card="'+i+'" aria-label="'+esc(id)+'"><span class="card-type">'+(c.kind==='function'?'◇':c.kind==='global'?'◎':'✧')+'</span><span class="card-symbol"><span class="card-ink">'+card(id)+'</span></span><span class="card-number">'+(order>=0?order+1:String(i+1).padStart(2,'0'))+'</span></button>';}).join('');}
 function operandsHtml(state,move){if(move.pass)return rune('END');const id=state.hands[state.turn][move.cardIndex],c=getCard(id);if(move.discard)return (move.cardIndices??[move.cardIndex]).map(i=>card(state.hands[state.turn][i])).join(' / ');if(c.kind==='binary'){const a=formula(state.boards[move.owner][move.target]),b=card(state.hands[state.turn][move.partnerIndex]);return (move.direction==='cardOverBasis'?b:a)+' <span class="op-sign">'+card(id)+'</span> '+(move.direction==='cardOverBasis'?a:b);}if(isFieldCard(c))return card(id)+' → '+name(move.owner)+' ◎';return card(id)+' → '+formula(state.boards[move.owner][move.target]);}
 function binarySelectionHtml(){const c=currentCard(),vals=selection.operands.map(z=>z.kind==='hand'?card(game.hands[0][z.index]):formula(game.boards[z.owner][z.index]));return (vals[0]||'<span class="operand-slot">Ⅰ</span>')+' <span class="op-sign">'+card(c.id)+'</span> '+(vals[1]||'<span class="operand-slot">Ⅱ</span>');}
-function showFormula(owner,index){const e=game.boards[owner][index];if(!e)return;$('formula-title').textContent=name(owner)+' · '+String(index+1).padStart(2,'0');$('formula-body').innerHTML='<div class="inspect-seal">'+sealMarkup(e,'inspect')+'</div><div class="inspect-equation">'+formula(e)+'</div>';$('formula-dialog').showModal();}
+function showFormula(owner,index){const e=game.boards[owner][index];if(!e)return;$('formula-title').textContent=name(owner)+' · '+String(index+1).padStart(2,'0');$('formula-body').innerHTML='<div class="inspect-seal">'+sealMarkup(e,'inspect')+'</div><div class="inspect-equation">'+basisFormula(e)+'</div>';$('formula-dialog').showModal();}
 function optionsHtml(c){let s='';if(c.kind==='constant')s+='<label class="input-group">C <select aria-label="Constant" id="constant-select">'+CONSTANTS.filter(v=>c.id!=='PLUS_C'||v!==0).map(v=>'<option value="'+v+'" '+(v===selection.C?'selected':'')+'>'+v+'</option>').join('')+'</select></label>';if(c.kind==='limitZero')s+='<label class="input-group">x → <select aria-label="Limit direction" id="side-select">'+[['two','0'],['plus','0⁺'],['minus','0⁻']].map(([v,label])=>'<option value="'+v+'" '+(selection.side===v?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';return s;}
 function effectHtml(result){const list=result?.effect?.result;if(!list?.length)return '';const removed=result.effect.erased||0;return '<div class="effect-formula"><span>→</span> '+list.map(formula).join(' , ')+(removed?' <small class="break-count">✦ −'+removed+'</small>':'')+'</div>';}
 function ritualPreview(state,move,result){
@@ -88,14 +89,13 @@ function animateBreak(move,result){
  const field=$(move.owner?'opponent':'player'),indices=result.effect.removed||[];
  for(const i of indices){
   const old=field.querySelector('[data-index="'+i+'"]');if(!old)continue;
-  const r=old.getBoundingClientRect(),ghost=document.createElement('div');
+  const art=old.querySelector('.seal-art');if(!art)continue;
+  const r=art.getBoundingClientRect(),ghost=document.createElement('div');
   ghost.className='break-ghost';ghost.style.cssText='left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;height:'+r.height+'px';
-  // The ghost is fractured with CSS clipping; copied IDs are renamed so textPath
-  // references stay local even after the original field is replaced.
-  const prefix='break-'+gameSerial+'-'+game.turns+'-'+i+'-'+Date.now()+'-';
+  // Fracture only the geometric seal, not the separate equation label.
   for(let j=0;j<4;j++){
    const fragment=document.createElement('div');fragment.className='seal-fragment fragment-'+j;
-   fragment.innerHTML=old.innerHTML.replace(/board-\d+-\d+-arc-/g,prefix+j+'-arc-');ghost.appendChild(fragment);
+   fragment.innerHTML=art.innerHTML;ghost.appendChild(fragment);
   }
   for(let j=0;j<8;j++){const shard=document.createElement('i');shard.style.setProperty('--a',j*45+'deg');ghost.appendChild(shard);}
   document.body.appendChild(ghost);setTimeout(()=>ghost.remove(),850);

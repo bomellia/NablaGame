@@ -100,3 +100,27 @@ dialog{color:var(--paper);background:#211c17;border:1px solid var(--gold);paddin
 
 /* v0.26: natural advances on independent annular baselines. */
 .annular-math .math-run{font-family:"Cambria Math","STIX Two Text",Georgia,serif;font-weight:400;letter-spacing:0;font-kerning:normal}
+
+/* v0.27 — Fixed geometric seals and separate, conventional equations. */
+.basis{width:clamp(98px,14vw,152px);height:100%;max-height:174px;padding:2px 3px 1px;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 36px 10px;gap:2px;align-items:center;justify-items:center}
+.seal-art{display:grid;place-items:center;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
+.basis .seal-art .sigil{width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1}
+.basis-equation{width:100%;height:100%;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#f2dfb9;font:17px Georgia,serif;line-height:1.25;border-top:1px solid #b29b7026;padding:1px 0}
+.basis-equation .card-ink{white-space:nowrap}
+.equation-overflow{display:none;font:19px Georgia}
+.equation-abbreviated .card-ink{visibility:hidden;position:absolute;pointer-events:none}
+.equation-abbreviated .equation-overflow{display:block}
+.basis .seal-index{position:static;line-height:1}
+.seal-geometry{opacity:.88}.seal-geometry.fine{opacity:.42}
+.break-ghost .sigil{width:100%;height:100%}
+.inspect-seal{width:min(62vw,270px)}
+.inspect-equation{text-align:left}
+.inspect-equation>.katex{display:inline-block;min-width:100%;text-align:center}
+@media(max-width:700px){
+ .basis{width:clamp(90px,25vw,120px);max-height:100%;grid-template-rows:minmax(0,1fr) 29px 9px;padding:1px 3px;gap:1px}
+ .basis-equation{font-size:14px}
+}
+@media(max-width:700px) and (max-height:590px){
+ main{grid-template-rows:108px 108px minmax(180px,auto) 150px}
+ .basis{grid-template-rows:minmax(0,1fr) 26px 8px}
+}

@@ -6,11 +6,13 @@ export function fitScale(width,height,naturalWidth,naturalHeight,padding=4){
 }
 export function fitMath(root){
  if(!root?.querySelectorAll)return;
- for(const box of root.querySelectorAll('.card-symbol, #selected-card')){
+ for(const box of root.querySelectorAll('.card-symbol, #selected-card, .basis-equation')){
   const ink=box.querySelector('.card-ink');if(!ink||!box.clientWidth||!box.clientHeight)continue;
   ink.style.transform='none';
   const r=ink.getBoundingClientRect();
   const scale=fitScale(box.clientWidth,box.clientHeight,r.width,r.height);
+  const abbreviated=box.classList?.contains('basis-equation')&&scale<.60;
+  box.classList?.toggle('equation-abbreviated',!!abbreviated);
   ink.style.transform='scale('+scale+')';
  }
 }

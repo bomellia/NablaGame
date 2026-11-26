@@ -30,7 +30,7 @@ test('wider expressions enlarge radius without increasing angular span',()=>{
  }
 });
 test('path IDs are local to each seal and compatible with destruction clones',()=>{
- const e=f('atan',x),a=sealMarkup(e,'board-0-0'),b=sealMarkup(e,'board-1-0');
+ const e=f('atan',x),a=curvedMath(e,'board-0-0').markup,b=curvedMath(e,'board-1-0').markup;
  assert.match(a,/id="board-0-0-arc-0"/);assert.match(a,/href="#board-0-0-arc-0"/);
  assert.match(b,/href="#board-1-0-arc-0"/);
  assert.doesNotMatch(a,/board-1-0/);

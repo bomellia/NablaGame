@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fitScale,fitMath} from '../fit-math.js';
-import {sealMarkup} from '../sigil.js';
+import {curvedMath} from '../annular-math.js';
 test('fit both dimensions without enlarging short expressions',()=>{
  assert.equal(fitScale(80,50,30,20),1);
  assert.equal(fitScale(80,50,152,20),.5);
@@ -17,7 +17,7 @@ test('fit recalculates after viewport resize and measures natural size',()=>{
  box.clientWidth=156;fitMath(doc);assert.equal(ink.style.transform,'scale(1)');assert.equal(resets,2);
 });
 test('short inscriptions receive larger type on the circle',()=>{
- const svg=sealMarkup({t:'f',f:'sin',arg:{t:'x'}},'test');
+ const svg=curvedMath({t:'f',f:'sin',arg:{t:'x'}},'test').markup;
  assert.match(svg,/font-size="23"/);
  assert.match(svg,/class="annular-math"/);
 });

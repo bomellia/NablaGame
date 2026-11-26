@@ -7,7 +7,7 @@ test('reciprocal uses radially stacked numerator and denominator, with arc rule'
  const e=p(x,-1),b=mathBox(e),g=b.items.filter(i=>i.type==='glyph');
  assert.equal(g[0].text,'1');assert.equal(g[1].text,'x');assert.ok(g[0].y<g[1].y);
  assert.match(curvedMath(e).markup,/class="math-rule fraction-rule" d="M[^"]+ A/);
- assert.match(sealMarkup(e),/fraction-ring/);assert.ok(sealSize(e)>sealSize(x));
+ assert.match(sealMarkup(e),/data-family="reciprocal"/);assert.equal(sealSize(e),sealSize(x));
 });
 test('rational coefficient, negative power, nested fraction and root',()=>{
  for(const [e,count] of [[n(.5),1],[m(n(.5),p(x,-2)),1],[p(a(n(1),p(x,-1)),-1),2],[p(x,1.5),1]]){

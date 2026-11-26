@@ -1,6 +1,5 @@
 // Pure presentation: the seal is a deterministic drawing of the AST, not a game statistic.
 import {displayNumber} from './number-format.js?v=0.15';
-import {curvedMath,annularLayout} from './annular-math.js?v=0.26';
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const glyphs=Array.from('ᚨᛒᚲᛞᛖᚠᚷᚺᛁᛃᚲᛚᛗᚾᛟᛈᚲᚱᛊᛏᚢᚹᚹᚲᛇᛉ');
 export const rune=s=>String(s).toUpperCase().replace(/[A-Z]/g,c=>glyphs[alphabet.indexOf(c)]);
@@ -43,25 +42,80 @@ export function inscription(e,max=170){
 }
 const pt=(r,a)=>[+(r*Math.cos(a*Math.PI/180)).toFixed(3),+(r*Math.sin(a*Math.PI/180)).toFixed(3)];
 const polygon=(r,n,offset=-90,step=1)=>Array.from({length:n},(_,i)=>pt(r,offset+i*360*step/n).join(',')).join(' ');
-function arc(r){const a=pt(r,130),b=pt(r,410);return 'M'+a.join(' ')+' A'+r+' '+r+' 0 1 1 '+b.join(' ');}
-export function sealSize(e){const a=annularLayout(e);return Math.min(1.5,Math.max(1,(a.outer+(a.fractional?9:5))/84));}
+// Fixed outer radius; geometry describes the expression, never its strength.
+export function sealFamily(e){
+ if(e.t==='n')return 'constant';
+ if(e.t==='p')return e.e<0?'reciprocal':e.e%1?'radical':'power';
+ if(e.t==='a')return 'sum';
+ if(e.t==='m')return e.v.some(t=>t.t==='p'&&t.e<0)?'reciprocal':'product';
+ if(e.t==='complex')return 'complex';
+ if(e.t==='f'){
+  if(/^(sin|cos|tan|cot|sec|csc|sinh|cosh|tanh)$/.test(e.f))return 'wave';
+  if(e.f==='exp')return 'exponential';
+  if(e.f==='log'||e.f==='logabs')return 'logarithm';
+  if(e.f==='sqrt')return 'radical';
+  if(/^(a(sin|cos|tan|sinh|cosh|tanh)|arcsin|arccos|arctan)$/.test(e.f))return 'inverse';
+  return 'special';
+ }
+ return 'variable';
+}
+export function sealSize(){return 1;}
 export function sealMarkup(e,id='seal'){
- id=String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
- const p=profile(e),n=p.sides,math=curvedMath(e,id),rim=math.outer,core=43;
- const lines=[];
- lines.push('<circle class="seal-rim" r="'+rim+'"/><circle r="'+(rim-4)+'" class="seal-line"/>');
- if(math.fractional)lines.push('<circle class="fraction-ring seal-line" r="'+(rim+5)+'"/>');
- lines.push('<circle class="seal-guide" r="'+(core+4)+'"/>',math.markup);
- lines.push('<circle r="'+core+'" class="seal-line"/><polygon points="'+polygon(core*.86,n)+'" class="seal-geometry"/>');
- if(p.level>=2)lines.push('<polygon points="'+polygon(core*.86,n,-90+180/n)+'" class="seal-geometry fine"/>');
- if(p.functions){const petals=Math.min(6,2+p.functions);for(let j=0;j<petals;j++)lines.push('<ellipse cx="0" cy="'+(-core*.31)+'" rx="'+core*.24+'" ry="'+core*.55+'" transform="rotate('+360*j/petals+')" class="seal-geometry fine"/>');}
- if(p.level>=4)lines.push('<polygon points="'+polygon(core*.61,n,-90,2)+'" class="seal-geometry fine"/>');
- if(p.powers||p.branches)for(let j=0;j<n;j++){const [x,y]=pt(core*.86,-90+j*360/n);lines.push('<circle cx="'+x+'" cy="'+y+'" r="1.5" class="seal-dot"/>');}
- const ticks=12+p.level*4;
- for(let j=0;j<ticks;j++){const a=j*360/ticks, [x,y]=pt(rim-4,a),[u,v]=pt(j%4===0?rim:rim-2,a);lines.push('<path d="M'+x+' '+y+'L'+u+' '+v+'" class="seal-line"/>');}
+ const p=profile(e),family=sealFamily(e),rim=79,lines=[];
+ const circle=(r,cls='seal-line',x=0,y=0)=>lines.push('<circle cx="'+x+'" cy="'+y+'" r="'+r+'" class="'+cls+'"/>');
+ const poly=(r,n,a=-90,step=1,cls='seal-geometry')=>lines.push('<polygon points="'+polygon(r,n,a,step)+'" class="'+cls+'"/>');
+ const path=(points,cls='seal-geometry')=>lines.push('<path d="'+points.map((a,i)=>(i?'L':'M')+a.join(' ')).join(' ')+'" class="'+cls+'"/>');
+ const dot=(r,a,s=1.6)=>{const [x,y]=pt(r,a);lines.push('<circle cx="'+x+'" cy="'+y+'" r="'+s+'" class="seal-dot"/>');};
+ const petals=(n,r=27,ry=31,rx=15,phase=0)=>{for(let j=0;j<n;j++)lines.push('<ellipse cx="0" cy="'+(-r)+'" rx="'+rx+'" ry="'+ry+'" transform="rotate('+(phase+360*j/n)+')" class="seal-geometry"/>');};
+ const spiral=(turns,phase=0)=>path(Array.from({length:97},(_,i)=>pt(8+49*i/96,phase+turns*360*i/96)),'seal-geometry');
+ circle(rim,'seal-rim');circle(74);circle(68,'seal-guide');
+ // A different silhouette of the internal geometry for each outer operation.
+ switch(family){
+ case 'constant':
+  circle(53);poly(37,4);poly(22,4,0,1,'seal-geometry fine');break;
+ case 'variable':
+  poly(56,3);circle(29);poly(18,3,90);break;
+ case 'power':{
+  const n=3+Math.min(5,Math.max(0,Math.round(Math.abs(e.e))-1));
+  poly(57,n);poly(47,n,-90+180/n);circle(23);
+  for(let i=0;i<n;i++)dot(57,-90+360*i/n);break;}
+ case 'wave':{
+  const offset=e.f.startsWith('cos')?30:e.f.startsWith('tan')?60:0;
+  petals(e.f.startsWith('tan')?4:3,24,32,19,offset);circle(56);
+  poly(49,3,-90+offset,1,'seal-geometry fine');break;}
+ case 'exponential':
+  spiral(1.4,-90);spiral(1.4,90);poly(58,4);poly(58,4,-45,1,'seal-geometry fine');break;
+ case 'logarithm':
+  for(let i=0;i<3;i++)circle(30,'seal-geometry',...pt(23,-90+i*120));
+  circle(55);poly(31,3,90,1,'seal-geometry fine');break;
+ case 'radical':
+  poly(59,4);poly(48,3,90);circle(26);path([[-34,0],[-19,0],[-9,23],[10,-32],[33,-32]]);break;
+ case 'reciprocal':
+  circle(56);poly(53,4,0);poly(53,4,-45);path([[-56,0],[56,0]]);circle(21);break;
+ case 'inverse':
+  petals(4,21,32,15,45);poly(57,4,0);circle(29);break;
+ case 'sum':
+  poly(58,6, -90,2);poly(58,3,90);circle(33);poly(28,6);break;
+ case 'product':
+  poly(58,4);poly(58,4,-45);poly(40,4,-22.5);circle(21);break;
+ case 'complex':
+  circle(35,'seal-geometry',-22,0);circle(35,'seal-geometry',22,0);
+  poly(58,4);path([[0,-56],[0,56]],'seal-geometry fine');break;
+ default:
+  poly(58,7,-90,2);circle(41);poly(27,7,-90,3,'seal-geometry fine');
+ }
+ // Complexity changes internal density, ticks and secondary motifs; all
+ // decorations stay inside the same outer ring.
+ if(p.level>=3)circle(63,'seal-geometry fine');
+ if(p.level>=4)poly(37,p.sides,-90+(p.hash%12)*5,1,'seal-geometry fine');
+ if(p.level>=5)poly(19,5,-90,2,'seal-geometry fine');
+ const ticks=12+4*p.level;
+ for(let i=0;i<ticks;i++){
+  const a=i*360/ticks;path([pt(i%4===0?69:72,a),pt(78,a)],'seal-line');
+ }
+ for(let i=0;i<4;i++)dot(65,-90+i*90+(p.hash%4)*11.25,1.45);
  lines.push('<path d="M0 -6 L2 0 0 6 -2 0Z M-6 0L0 -2 6 0 0 2Z" class="seal-dot"/>');
- const extent=Math.ceil(rim+(math.fractional?9:5));
- return '<svg viewBox="'+[-extent,-extent,2*extent,2*extent].join(' ')+'" class="sigil level-'+p.level+(math.fractional?' fraction-seal':'')+'" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'+lines.join('')+'</svg>';
+ return '<svg viewBox="-84 -84 168 168" class="sigil level-'+p.level+'" data-family="'+family+'" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'+lines.join('')+'</svg>';
 }
 export function logRune(s){
  return escape(String(s).replace(/あなた/g,'P').replace(/COM/g,'C').replace(/の場に/g,' → ').replace(/を基底に追加/g,' '+rune('INSCRIBE')).replace(/場全体を/g,rune('FIELD')+' ').replace(/階微分/g,' D').replace(/基底(\d+)個消滅/g,(_,n)=>'−'+n+' '+rune('BREAK')).replace(/カードを(\d+)枚交換（ターン消費）/g,(_,n)=>rune('SWAP')+' '+n).replace(/追加の演算を行わずターン終了/g,rune('END')).replace(/投了しました。/g,rune('YIELD')).replace(/[一-龯ぁ-ゖァ-ヺ]+/g,rune('RITE')).replace(/：/g,':').replace(/（/g,' (').replace(/）/g,')'));
