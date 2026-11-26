@@ -153,14 +153,14 @@ export function limit(e,point='plus',side='two'){
 export function oscillatoryLimit(e,kind='sup'){
  e=realRepresentative(simplify(e));
  if(!isC(e)){
+  const bounds=trigExtrema(e,R.limit);
+  if(bounds){const v=bounds[kind==='sup'?1:0];return Number.isFinite(v)?{type:'finite',v}:{type:'infinity',sign:Math.sign(v)};}
   const poles=trigSumPoleSigns(e,R.limit);
   if(poles){
    if(kind==='sup'&&poles.positive)return {type:'infinity',sign:1};
    if(kind==='inf'&&poles.negative)return {type:'infinity',sign:-1};
    return {type:'unknown'}; // no certified extremum on this side
   }
-  const bounds=trigExtrema(e,R.limit);
-  if(bounds){const v=bounds[kind==='sup'?1:0];return Number.isFinite(v)?{type:'finite',v}:{type:'infinity',sign:Math.sign(v)};}
   const q=asymptoticLimit(e,'plus','two');
   if(q.type==='complexInfinity')return {type:'unknown'};
   if(q.type==='complex')return {type:'symbolic',expr:complex(n(q.re),n(q.im))};
