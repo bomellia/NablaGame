@@ -324,6 +324,7 @@ export function chooseComMove(s) {
     // The free follow-up is optional. Spend cards only for immediate gains
     // or for a winning action; otherwise keep them for the next turn.
     if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0))return {pass:true};
+    if(s.pending.phase==='chain'&&usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard')>scoreMove(s,a,a.nextState,'hard')?b:a);}
     const {nextState,scoreDelta,...chosen}=best;
     return chosen;
   }
