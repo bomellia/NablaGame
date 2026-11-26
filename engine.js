@@ -230,7 +230,7 @@ export function applyMove(s,move,trace=null) {
   const resolved=reduceBasis(own);
   ns.boards[move.owner]=resolved.kept;
   const erased=preCount-resolved.kept.length;
-  if(trace)trace.erased=erased;
+  if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
   ns.log.unshift(`${actorName}：${targetName}の場に ${card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
