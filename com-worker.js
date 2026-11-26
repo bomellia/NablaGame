@@ -1,5 +1,5 @@
 /** COM evaluation off the UI thread; only JSON-safe moves cross the boundary. */
-import {chooseComMove} from './engine.js?v=0.18';
+import {chooseComMove} from './engine.js?v=0.19';
 self.onmessage=event=>{
   try{
     const move=chooseComMove(event.data);

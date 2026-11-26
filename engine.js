@@ -66,6 +66,11 @@ export function normalizeGame(game){
     }
   }
   finish(state);
+  // Old saves have no pending phase. If a migrated chain lost its target,
+  // settle the already consumed cards instead of silently retargeting.
+  if(state.pending&&(state.finished||state.pending.phase==='chain'&&
+    (state.boards[state.pending.owner].length!==game.boards[state.pending.owner].length||
+     !state.boards[state.pending.owner][state.pending.target])))endTurn(state,state.turn);
   state.version=14;
   return state;
 }
@@ -75,7 +80,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const opening=initialBoard(random);
   return {version:14,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,extended,difficulty,
+    turns:0,finished:false,winner:null,pending:null,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -85,6 +90,13 @@ export function validate(s,move) {
   if(move.cardIndex<0||move.cardIndex>=s.hands[actor].length)throw new Unsupported('カードが選択されていません');
   const cardId=s.hands[actor][move.cardIndex], card=CARD_MAP[cardId];
   if(!card)throw new Unsupported('カードが不正です');
+  if(s.pending){
+    if(card.kind==='function')throw new Unsupported('連続演算・追加行動では基底を追加できません');
+    if(s.pending.phase==='chain'&&(card.kind==='global'||move.owner!==s.pending.owner||move.target!==s.pending.target))
+      throw new Unsupported('2つ目の演算は同じ基底に適用してください');
+    if(move.continue)throw new Unsupported('連続演算は最大2演算です');
+  }
+  if(move.continue&&['function','global'].includes(card.kind))throw new Unsupported('個別演算のみ連続使用できます');
   if(move.owner!==0&&move.owner!==1)throw new Unsupported('対象のプレイヤーが不正です');
   if(opTargetRequired(card.kind) && !(card.kind==='global')) {
     if(!Number.isInteger(move.target)||move.target<0||move.target>=s.boards[move.owner].length)throw new Unsupported('対象の基底を選んでください');
@@ -143,15 +155,23 @@ function drawWeighted(state,actor){
  for(let i=0;i<deck.length;i++){r-=LIMIT_CARDS.includes(deck[i])?w:1;if(r<0)return deck.splice(i,1)[0];}
  return deck.pop();
 }
-function recycle(state,actor,indices){
- const used=[...indices].sort((a,b)=>b-a).map(i=>state.hands[actor].splice(i,1)[0]);
+function consume(state,actor,indices){
+ return [...indices].sort((a,b)=>b-a).map(i=>state.hands[actor].splice(i,1)[0]);
+}
+function replenish(state,actor,used){
  const deck=state.deck;
  if(deck.length<used.length)throw new Unsupported('山札データが不正です');
  for(const id of used)state.hands[actor].push(drawWeighted(state,actor));
  for(const id of used)deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);
 }
+function recycle(state,actor,indices){replenish(state,actor,consume(state,actor,indices));}
+function endTurn(state,actor,used=[]){
+ const spent=[...(state.pending?.spent||[]),...used];
+ replenish(state,actor,spent);state.pending=null;state.turn=1-actor;state.turns++;finish(state);
+ return state;
+}
 export function deckCount(state){return state.deck.length;}
-export function resign(state,actor=0){const s=copy(state);s.finished=true;s.winner=1-actor;s.log.unshift('投了しました。');return s;}
+export function resign(state,actor=0){const s=copy(state);if(s.pending){replenish(s,s.turn,s.pending.spent);s.pending=null;}s.finished=true;s.winner=1-actor;s.log.unshift('投了しました。');return s;}
 function finish(state) {
   if(state.boards.some(b=>b.length===0)){
     state.finished=true;
@@ -160,7 +180,13 @@ function finish(state) {
   }
 }
 export function applyMove(s,move,trace=null) {
+  if(move.pass){
+    if(s.finished||!s.pending)throw new Unsupported('追加行動中のみ終了できます');
+    const ns=copy(s);ns.log.unshift(`${s.turn===0?'あなた':'COM'}：追加の演算を行わずターン終了`);ns.log=ns.log.slice(0,16);
+    return endTurn(ns,s.turn);
+  }
   if(move.discard) {
+    if(s.pending)throw new Unsupported('連続演算・追加行動中は交換できません');
     const ns=copy(s),actor=ns.turn;
     const indices=move.cardIndices??[move.cardIndex];
     if(s.finished||!Array.isArray(indices)||!indices.length||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||i<0||i>=s.hands[actor].length))throw new Unsupported('交換するカードを正しく選択してください');
@@ -201,9 +227,20 @@ export function applyMove(s,move,trace=null) {
   const actorName=actor===0?'あなた':'COM';
   ns.log.unshift(`${actorName}：${targetName}の場に ${card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
   ns.log=ns.log.slice(0,16);
-  recycle(ns,actor,used);
-  ns.turn=1-actor;ns.turns++;finish(ns);
-  return ns;
+  const spent=consume(ns,actor,used);
+  finish(ns);
+  const enemyErased=move.owner===1-actor&&ns.boards[move.owner].length<s.boards[move.owner].length;
+  if(move.continue){
+    if(ns.finished||erased||!ns.hands[actor].some(id=>CARD_MAP[id]&&!['function','global'].includes(CARD_MAP[id].kind)))
+      throw new Unsupported('この操作からは連続演算できません');
+    ns.pending={phase:'chain',owner:move.owner,target:move.target,spent};
+    return ns;
+  }
+  if(!ns.finished&&s.pending?.phase!=='bonus'&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]?.kind!=='function')){
+    ns.pending={phase:'bonus',spent:[...(s.pending?.spent||[]),...spent]};
+    return ns;
+  }
+  return endTurn(ns,actor,spent);
 }
 export function preview(s,move) {
   try {
@@ -219,10 +256,11 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
   const moves=[];
   for(let i=0;i<s.hands[s.turn].length;i++) {
     const card=CARD_MAP[s.hands[s.turn][i]];
-    if(!card)continue;
+    if(!card||s.pending&&card.kind==='function'||s.pending?.phase==='chain'&&card.kind==='global')continue;
     for(let owner=0;owner<2;owner++) {
+      if(s.pending?.phase==='chain'&&owner!==s.pending.owner)continue;
       let accepted=0;
-      const indices=card.kind==='function'||card.kind==='global'?[null]:s.boards[owner].map((_,j)=>j);
+      const indices=s.pending?.phase==='chain'?[s.pending.target]:card.kind==='function'||card.kind==='global'?[null]:s.boards[owner].map((_,j)=>j);
       for(const target of indices) {
         let choices=[{}];
         if(card.kind==='binary') {
@@ -246,7 +284,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
       }
     }
   }
-  if(!moves.length)return s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i,cardIndices:[i]}));
+  if(!moves.length)return s.pending?[{pass:true}]:s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i,cardIndices:[i]}));
   return moves;
 }
 function valueOf(e) {
@@ -264,7 +302,7 @@ function scoreMove(state,move,after,difficulty) {
   const otherDelta=state.boards[enemy].length-after.boards[enemy].length;
   const ownValue=after.boards[a].reduce((acc,e)=>acc+valueOf(e),0);
   const oppValue=after.boards[enemy].reduce((acc,e)=>acc+valueOf(e),0);
-  const used=move.partnerIndex===undefined?1:2;
+  const used=Number.isInteger(move.partnerIndex)&&move.partnerIndex>=0?2:1;
   const raw=otherDelta*14+ownDelta*12+0.9*(ownValue-oppValue)-used*0.3;
   if(difficulty==='easy') return raw*.3+Math.random()*15;
   if(difficulty==='hard') return raw+Math.random()*1.3;
@@ -275,10 +313,39 @@ export function chooseComMove(s) {
   // Preview results are reused for scoring, avoiding duplicate CAS work.
   const moves=legalMoves(s,{limit:1000,perCardOwner:10,includeState:true});
   if(!moves.length)return null;
+  if(moves[0].pass)return {pass:true};
   let best=moves[0],bestScore=-Infinity;
   for(const move of moves){
     const score=move.discard?(-1000+Math.random()):scoreMove(s,move,move.nextState,s.difficulty);
     if(score>bestScore){bestScore=score;best=move;}
+  }
+  const usefulAttack=moves.some(m=>!m.discard&&m.scoreDelta?.[1-s.turn]<0);
+  if(s.pending){
+    // The free follow-up is optional. Spend cards only for immediate gains
+    // or for a winning action; otherwise keep them for the next turn.
+    if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0))return {pass:true};
+    const {nextState,scoreDelta,...chosen}=best;
+    return chosen;
+  }
+  // Bounded two-step lookahead. No replacement cards are drawn between steps,
+  // so this search uses only the known hand and board.
+  if(s.hands[s.turn].filter(id=>CARD_MAP[id]?.kind!=='function').length>=2){
+    const candidates=moves.filter(m=>!m.discard&&m.owner===1-s.turn&&m.target!=null&&
+      m.scoreDelta?.[1-s.turn]===0&&m.scoreDelta?.[s.turn]===0&&m.nextState&&!m.nextState.finished)
+      .sort((a,b)=>Number(LIMIT_CARDS.includes(s.hands[s.turn][a.cardIndex]))-Number(LIMIT_CARDS.includes(s.hands[s.turn][b.cardIndex])));
+    // Round-robin across first card indices to avoid starving later cards.
+    const shortlist=[],seen=new Map();
+    for(const m of candidates){const k=m.cardIndex,n=seen.get(k)||0;if(n>=3)continue;seen.set(k,n+1);shortlist.push(m);if(shortlist.length>=18)break;}
+    for(const m of shortlist){
+      const {nextState,scoreDelta,...first}=m;
+      const p=preview(s,{...first,continue:true});if(!p.ok)continue;
+      for(const second of legalMoves(p.state,{limit:48,perCardOwner:8,includeState:true})){
+        if(second.pass||second.discard||!second.nextState||second.scoreDelta[1-s.turn]>=0)continue;
+        const score=scoreMove(s,first,second.nextState,s.difficulty)-.6;
+        if(score>bestScore){bestScore=score;best={...first,continue:true,scoreDelta:second.scoreDelta,nextState:second.nextState};}
+      }
+    }
+    if(best.continue){const {nextState,scoreDelta,...chosen}=best;return chosen;}
   }
   // Exchange is evaluated from the visible hand and legal actions only.
   // Never inspect the order of unseen replacement cards.
