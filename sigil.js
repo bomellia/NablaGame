@@ -26,7 +26,7 @@ export function inscription(e,max=170){
   if(!v||d>24||--remaining<0)return '…';
   switch(v.t){
    case 'x':return 'x';
-   case 'n':return displayNumber(v.v).replace(/-/g,'−');
+   case 'n':return Number.isFinite(v.v)?displayNumber(v.v).replace(/-/g,'−'):'?';
    case 'a':return v.v.slice(0,50).map(z=>walk(z,d+1)).join(' + ').replace(/\+ −/g,'− ')+(v.v.length>50?' …':'');
    case 'm':return v.v.slice(0,50).map(z=>group(z,d+1)).join('·')+(v.v.length>50?' …':'');
    case 'p':{const b=group(v.b,d+1),k=String(v.e);return /^-?\d+$/.test(k)?b+Array.from(k,c=>sup[c]).join(''):b+'^('+displayNumber(v.e)+')';}
