@@ -2,9 +2,9 @@ import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.20';
 import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.28';
 import {previewVariants} from './formula-preview.js?v=0.29';
-import {rune,sealMarkup,logRune} from './sigil.js?v=0.30';
+import {rune,sealMarkup,logRune} from './sigil.js?v=0.32';
 import {fitMath} from './fit-math.js?v=0.29';
-import {transitionBoard,animationMarkup} from './seal-animation.js?v=0.31';
+import {transitionBoard,animationMarkup} from './seal-animation.js?v=0.32';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
 const basisFormula=e=>mathMarkup('\\displaystyle '+toLatex(e),display(e));

@@ -1,5 +1,5 @@
 // Presentation-only transitions. The committed game state is never delayed.
-import {sealMarkup} from './sigil.js?v=0.30';
+import {sealMarkup} from './sigil.js?v=0.32';
 export const REWRITE_MS=1120, INSCRIBE_MS=760;
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export function transitionBoard(previous,next,removed=[],prior=[],now=Date.now()){

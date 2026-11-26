@@ -1,5 +1,6 @@
 // Pure presentation: the seal is a deterministic drawing of the AST, not a game statistic.
 import {displayNumber} from './number-format.js?v=0.15';
+import {graphMotif} from './seal-graph.js?v=0.32';
 // Visual substitution, not historical transliteration. Keep Latin letters
 // when no rune has a recognizable shape; never conflate different letters.
 const glyphs=Object.freeze({"A":"A","B":"ᛒ","C":"C","D":"D","E":"E","F":"ᚠ","G":"G","H":"ᚺ","I":"ᛁ","J":"J","K":"K","L":"L","M":"ᛗ","N":"N","O":"ᛜ","P":"ᚹ","Q":"Q","R":"ᚱ","S":"ᛋ","T":"T","U":"U","V":"V","W":"W","X":"ᚷ","Y":"ᛉ","Z":"Z"});
@@ -63,7 +64,7 @@ export function sealFamily(e){
 }
 export function sealSize(){return 1;}
 export function sealMarkup(e,id='seal'){
- const p=profile(e),family=sealFamily(e),rim=79,lines=[];
+ const p=profile(e),family=sealFamily(e),graph=graphMotif(e),rim=79,lines=[];
  const circle=(r,cls='seal-line',x=0,y=0)=>lines.push('<circle cx="'+x+'" cy="'+y+'" r="'+r+'" class="'+cls+'"/>');
  const poly=(r,n,a=-90,step=1,cls='seal-geometry')=>lines.push('<polygon points="'+polygon(r,n,a,step)+'" class="'+cls+'"/>');
  const path=(points,cls='seal-geometry')=>lines.push('<path d="'+points.map((a,i)=>(i?'L':'M')+a.join(' ')).join(' ')+'" class="'+cls+'"/>');
@@ -71,7 +72,8 @@ export function sealMarkup(e,id='seal'){
  const petals=(n,r=27,ry=31,rx=15,phase=0)=>{for(let j=0;j<n;j++)lines.push('<ellipse cx="0" cy="'+(-r)+'" rx="'+rx+'" ry="'+ry+'" transform="rotate('+(phase+360*j/n)+')" class="seal-geometry"/>');};
  const spiral=(turns,phase=0)=>path(Array.from({length:97},(_,i)=>pt(8+49*i/96,phase+turns*360*i/96)),'seal-geometry');
  circle(rim,'seal-rim');circle(74);circle(68,'seal-guide');
- // A different silhouette of the internal geometry for each outer operation.
+ // Retain an abstract seal when a reliable real sample is unavailable.
+ if(!graph.curves.length){
  switch(family){
  case 'constant':
   circle(53);poly(37,4);poly(22,4,0,1,'seal-geometry fine');break;
@@ -111,13 +113,23 @@ export function sealMarkup(e,id='seal'){
  if(p.level>=3)circle(63,'seal-geometry fine');
  if(p.level>=4)poly(37,p.sides,-90+(p.hash%12)*5,1,'seal-geometry fine');
  if(p.level>=5)poly(19,5,-90,2,'seal-geometry fine');
+ }else{
+  // Open central area for the function; frame and guides remain secondary.
+  poly(64,8,-90,1,'seal-graph-frame');
+  if(p.level>=3)circle(64,'seal-graph-frame');
+  path([[-54,0],[54,0]],'seal-graph-axis');
+  path([[0,-54],[0,54]],'seal-graph-axis');
+  for(const k of [-30,-15,15,30]){path([[k,-2],[k,2]],'seal-graph-axis');path([[-2,k],[2,k]],'seal-graph-axis');}
+ }
  const ticks=12+4*p.level;
  for(let i=0;i<ticks;i++){
   const a=i*360/ticks;path([pt(i%4===0?69:72,a),pt(78,a)],'seal-line');
  }
  for(let i=0;i<4;i++)dot(65,-90+i*90+(p.hash%4)*11.25,1.45);
- lines.push('<path d="M0 -6 L2 0 0 6 -2 0Z M-6 0L0 -2 6 0 0 2Z" class="seal-dot"/>');
- return '<svg viewBox="-84 -84 168 168" class="sigil level-'+p.level+'" data-family="'+family+'" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'+lines.join('')+'</svg>';
+ if(!graph.curves.length)lines.push('<path d="M0 -6 L2 0 0 6 -2 0Z M-6 0L0 -2 6 0 0 2Z" class="seal-dot"/>');
+ // Last strokes: graphs erase first and are drawn after the ornamental frame.
+ for(const curve of graph.curves)lines.push('<path d="'+curve.d+'" class="seal-graph '+(curve.kind==='imag'?'graph-imag':'graph-real')+'"/>');
+ return '<svg viewBox="-84 -84 168 168" class="sigil level-'+p.level+'" data-family="'+family+'" data-graph="'+graph.mode+'" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'+lines.join('')+'</svg>';
 }
 export function logRune(s){
  return escape(String(s).replace(/あなた/g,'P').replace(/COM/g,'C').replace(/の場に/g,' → ').replace(/を基底に追加/g,' '+rune('INSCRIBE')).replace(/場全体を/g,rune('FIELD')+' ').replace(/階微分/g,' D').replace(/基底(\d+)個消滅/g,(_,n)=>'−'+n+' '+rune('BREAK')).replace(/カードを(\d+)枚交換（ターン消費）/g,(_,n)=>rune('SWAP')+' '+n).replace(/追加の演算を行わずターン終了/g,rune('END')).replace(/投了しました。/g,rune('YIELD')).replace(/[一-龯ぁ-ゖァ-ヺ]+/g,rune('RITE')).replace(/：/g,':').replace(/（/g,' (').replace(/）/g,')'));
