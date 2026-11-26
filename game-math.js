@@ -2,7 +2,7 @@
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
 import * as R from './symbolic-extended.js?v=0.18';
-import {asymptoticLimit,periodicRange,trigExtrema} from './asymptotic.js?v=0.16';
+import {asymptoticLimit,periodicRange,trigExtrema,trigSumPoleSigns} from './asymptotic.js?v=0.21';
 export * from './symbolic-extended.js?v=0.18';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
@@ -129,6 +129,7 @@ export function display(e,wrap=false){
 function realTreeLimit(e,point='plus',side='two'){
  if(point==='plus'||point==='minus'){
   const phaseExpr=point==='minus'?R.simplify(R.substituteNegX(e)):e;
+  if(trigSumPoleSigns(phaseExpr,R.limit))return {type:'nonexistent'};
   const r=trigExtrema(phaseExpr,R.limit);
   if(r&&r[0]!==r[1])return {type:'nonexistent'};
  }
@@ -152,6 +153,12 @@ export function limit(e,point='plus',side='two'){
 export function oscillatoryLimit(e,kind='sup'){
  e=realRepresentative(simplify(e));
  if(!isC(e)){
+  const poles=trigSumPoleSigns(e,R.limit);
+  if(poles){
+   if(kind==='sup'&&poles.positive)return {type:'infinity',sign:1};
+   if(kind==='inf'&&poles.negative)return {type:'infinity',sign:-1};
+   return {type:'unknown'}; // no certified extremum on this side
+  }
   const bounds=trigExtrema(e,R.limit);
   if(bounds){const v=bounds[kind==='sup'?1:0];return Number.isFinite(v)?{type:'finite',v}:{type:'infinity',sign:Math.sign(v)};}
   const q=asymptoticLimit(e,'plus','two');

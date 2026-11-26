@@ -266,3 +266,39 @@ export function trigExtrema(e,realLimit){
  }
  return null;
 }
+
+// Certified pole signs for sums of same-phase trigonometric Laurent monomials.
+// At a cosine zero, sin tends to +1 or -1; at a sine zero, cos does.
+// Only the terms with the lowest power of the vanishing factor contribute
+// to the leading pole. When their signs disagree, decline to certify that
+// approach rather than infer a sign from an approximate cancellation.
+// A finite extremum cannot be inferred merely from absence of a pole.
+export function trigSumPoleSigns(e,realLimit){
+ if(e.t!=='a')return null;
+ let phase=null;
+ const terms=[];
+ for(const term of e.v){
+  if(term.t==='n'){if(term.v!==0)terms.push({a:0,b:0,coefficient:term.v});continue;}
+  const m=trigMonomial(term);
+  if(!m)return null;
+  if(phase&&JSON.stringify(phase)!==JSON.stringify(m.phase))return null;
+  phase=m.phase;terms.push(m);
+ }
+ if(!phase||!continuousTail(phase)||realLimit(phase,'plus').type!=='infinity')return null;
+ const signs={positive:false,negative:false};
+ const parity=(s,k)=>k%2===0?1:s;
+ for(const axis of ['a','b']){
+  const other=axis==='a'?'b':'a';
+  const min=Math.min(...terms.map(t=>t[axis]));
+  if(min>=0)continue;
+  const leading=terms.filter(t=>t[axis]===min);
+  for(const small of [-1,1])for(const fixed of [-1,1]){
+   const cs=leading.map(t=>t.coefficient*parity(small,t[axis])*parity(fixed,t[other]));
+   // No floating-point summation of opposed leading coefficients: this
+   // also prevents false pole claims for identities such as sec²-tan².
+   if(cs.every(v=>v>0))signs.positive=true;
+   if(cs.every(v=>v<0))signs.negative=true;
+  }
+ }
+ return signs.positive||signs.negative?signs:null;
+}
