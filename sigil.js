@@ -48,13 +48,20 @@ export function sealMarkup(e,id='seal'){
  const p=profile(e),math=inscription(e),n=p.sides;
  // Each band carries a continuous segment of the same expression. The
  // reading direction is outer to inner; no duplicate formula in the core.
- const caps=[45,36,27,19],radii=[68,56,44,32],parts=[];
+ const caps=[42,31,21,12],parts=[];
  let rest=math;
  for(let i=0;i<caps.length&&rest;i++){let end=Math.min(rest.length,caps[i]);if(end<rest.length&&i<3){const split=rest.lastIndexOf(' ',end);if(split>Math.floor(end*.65))end=split;}let part=rest.slice(0,end);rest=rest.slice(end).trimStart();if(i===3&&rest)part=part.slice(0,-1)+'…';parts.push(part);}
- const core=parts.length===1?45:Math.max(13,48-10*(parts.length-1));
+ const radii=parts.length===1?[59]:[63,47,31,17];
+ const core=parts.length===1?43:Math.max(9,radii[parts.length-1]-8);
  const lines=[];
  lines.push('<circle class="seal-rim" r="79"/><circle r="75" class="seal-line"/>');
- for(let i=0;i<parts.length;i++){const r=radii[i],text=parts[i],size=Math.min(14,Math.max(8,Math.floor((r*4.65)/(Math.max(1,text.length)*.62))));lines.push('<circle class="seal-guide" r="'+(r-4)+'"/><path id="'+id+'-arc-'+i+'" d="'+arc(r)+'" fill="none" stroke="none"/><text class="inscription" font-size="'+size+'" text-anchor="middle" '+(text.length>caps[i]*.75?'textLength="'+Math.min(r*4.2,text.length*size*.57)+'" lengthAdjust="spacingAndGlyphs"':'')+'><textPath href="#'+id+'-arc-'+i+'" startOffset="50%">'+escape(text)+'</textPath></text>');}
+ for(let i=0;i<parts.length;i++){
+  const r=radii[i],text=parts[i],maxSize=parts.length===1?23:[17,16,14,11][i];
+  // Leave radial clearance for ascenders; densely written bands get smaller.
+  const size=Math.min(maxSize,Math.max(8,Math.floor((r*4.45)/(Math.max(1,text.length)*.65))));
+  const estimated=text.length*size*.65,available=r*4.45;
+  lines.push('<circle class="seal-guide" r="'+(r-5)+'"/><path id="'+id+'-arc-'+i+'" d="'+arc(r)+'" fill="none" stroke="none"/><text class="inscription" font-size="'+size+'" text-anchor="middle" '+(estimated>available*.9?'textLength="'+Math.min(available,estimated)+'" lengthAdjust="spacingAndGlyphs"':'')+'><textPath href="#'+id+'-arc-'+i+'" startOffset="50%">'+escape(text)+'</textPath></text>');
+ }
  lines.push('<circle r="'+core+'" class="seal-line"/><polygon points="'+polygon(core*.86,n)+'" class="seal-geometry"/>');
  if(p.level>=2)lines.push('<polygon points="'+polygon(core*.86,n,-90+180/n)+'" class="seal-geometry fine"/>');
  if(p.functions){const petals=Math.min(6,2+p.functions);for(let j=0;j<petals;j++)lines.push('<ellipse cx="0" cy="'+(-core*.31)+'" rx="'+core*.24+'" ry="'+core*.55+'" transform="rotate('+360*j/petals+')" class="seal-geometry fine"/>');}
