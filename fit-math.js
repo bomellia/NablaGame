@@ -6,6 +6,23 @@ export function fitScale(width,height,naturalWidth,naturalHeight,padding=4){
  return Math.max(0,Math.min(1,Math.max(0,width-padding)/naturalWidth,Math.max(0,height-padding)/naturalHeight));
 }
 const cache=new WeakMap();
+// KaTeX fractions and scripts may extend beyond the inline wrapper's line
+// box. Include the visual math HTML bounds, not the accessibility MathML.
+export function inkBounds(ink){
+ const r=ink.getBoundingClientRect();
+ const rects=[r,...Array.from(ink.querySelectorAll?.('.katex, .katex-html')||[],el=>el.getBoundingClientRect())];
+ if(!rects.slice(1).length||![r.left,r.right,r.top,r.bottom].every(Number.isFinite))return {width:r.width,height:r.height};
+ // Absolute centering is around the wrapper, so reserve symmetric room for
+ // any baseline-dependent extension on either side.
+ const cx=(r.left+r.right)/2,cy=(r.top+r.bottom)/2;
+ let width=r.width,height=r.height;
+ for(const q of rects){
+  if(![q.left,q.right,q.top,q.bottom].every(Number.isFinite))continue;
+  width=Math.max(width,2*Math.abs(q.left-cx),2*Math.abs(q.right-cx));
+  height=Math.max(height,2*Math.abs(q.top-cy),2*Math.abs(q.bottom-cy));
+ }
+ return {width,height};
+}
 export function fitMath(root){
  if(!root?.querySelectorAll)return;
  for(const box of root.querySelectorAll('.card-symbol, #selected-card, .basis-equation')){
@@ -18,9 +35,10 @@ export function fitMath(root){
   }
   if(state&&ink.innerHTML!==state.full)ink.innerHTML=state.full;
   ink.style.transform='none';
-  const measure=()=>{const r=ink.getBoundingClientRect();return fitScale(box.clientWidth,box.clientHeight,r.width,r.height);};
-  let scale=measure(),abbreviated=!!basis&&scale<.60;
-  if(abbreviated&&state?.variants.length){
+  const measure=()=>{const r=inkBounds(ink);return fitScale(box.clientWidth,box.clientHeight,r.width,r.height,basis?6:4);};
+  let scale=measure(),abbreviated=false;
+  const needsPreview=!!basis&&scale<.60;
+  if(needsPreview&&state?.variants.length){
    let best={html:state.full,scale};
    for(const variant of state.variants){
     let html=state.rendered.get(variant.latex);

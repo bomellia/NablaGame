@@ -1,9 +1,9 @@
 import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display,resign} from './engine.js?v=0.23';
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.20';
 import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.28';
-import {previewVariants} from './formula-preview.js?v=0.28';
+import {previewVariants} from './formula-preview.js?v=0.29';
 import {rune,sealMarkup,logRune} from './sigil.js?v=0.28';
-import {fitMath} from './fit-math.js?v=0.28';
+import {fitMath} from './fit-math.js?v=0.29';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
 const basisFormula=e=>mathMarkup('\\displaystyle '+toLatex(e),display(e));
@@ -80,6 +80,8 @@ function render(){
  $('selected-label').textContent=thinking?'C':active?name(selection.owner)+' · '+String(selection.target+1).padStart(2,'0'):rune('RITE');
  $('selected-formula').innerHTML=swapSelection!==null?(swapSelection.map(i=>card(game.hands[0][i])).join(' / ')||rune('SWAP')):thinking&&comScene?.stage>=2?operandsHtml(comScene.state,comScene.move):thinking?rune('THINK'):isBinary()?binarySelectionHtml():active?formula(active):c?(isFieldCard(c)&&selection.owner!==null?name(selection.owner)+' ◎':rune('MARK')):rune('DRAW');
  $('action-panel').innerHTML=actionMarkup();$('hand-count').textContent=game.hands[0].length;$('deck-count').textContent='▤ '+game.deck.length;$('deck-mini').textContent='▤ '+game.deck.length;$('turn-indicator').textContent=game.finished?rune('END'):name(game.turn)+' · '+(game.pending?.phase==='bonus'?rune('BREAK')+' '+(game.pending.bonusCount||1):game.pending?rune('CHAIN'):rune('TURN'));$('turn-indicator').classList.toggle('busy',game.turn===1&&!game.finished);$('event-text').textContent=game.turn===0?'◈':'◇';$('log').innerHTML=game.log.slice(0,8).map(t=>'<div class="log-item">'+logRune(t)+'</div>').join('');$('log-mobile').innerHTML=game.log.map(t=>'<div class="log-item">'+logRune(t)+'</div>').join('');
+ // Fit the newly inserted math before painting, including on selection.
+ fitMath(document);
  scheduleFit();
  ['opponent','player','hand'].forEach((k,i)=>{const e=k==='hand'?$(k):$(k).querySelector('.bases');if(e)e.scrollLeft=scroll[i];});if(thinking&&comScene?.stage===2&&comScene.move?.target!=null){const e=$(comScene.move.owner===1?'opponent':'player').querySelector('.com-target');e?.scrollIntoView({block:'nearest',inline:'nearest'});}
 }
@@ -127,7 +129,7 @@ const prior=load();if(prior){game=prior;save();$('difficulty').value=prior.diffi
 window.addEventListener('resize',scheduleFit);
 if(typeof ResizeObserver!=='undefined'){
  const observer=new ResizeObserver(scheduleFit);
- observer.observe($('hand'));observer.observe($('selected-card'));
+ observer.observe($('hand'));observer.observe($('selected-card'));observer.observe($('opponent'));observer.observe($('player'));
 }
 document.fonts?.ready?.then(scheduleFit);
 document.fonts?.addEventListener?.('loadingdone',scheduleFit);

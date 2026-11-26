@@ -123,3 +123,19 @@ dialog{color:var(--paper);background:#211c17;border:1px solid var(--gold);paddin
  main{grid-template-rows:108px 108px minmax(180px,auto) 150px}
  .basis{grid-template-rows:minmax(0,1fr) 26px 8px}
 }
+
+
+/* v0.29: stable text sizing and math bounds across selection and re-render. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+.basis-equation{position:relative;display:block;contain:layout;overflow:hidden;padding:0}
+.basis-equation .card-ink,
+.basis-equation.equation-abbreviated .card-ink{
+ position:absolute;left:50%;top:50%;translate:-50% -50%;
+ display:inline-flex;align-items:center;justify-content:center;
+ width:max-content;height:max-content;max-width:none;max-height:none;
+ margin:0;white-space:nowrap;transform-origin:center center;
+ font-size:inherit;line-height:normal;
+}
+.basis-equation .card-ink>.katex{display:inline-block;flex:none}
+.basis-equation .katex-html{display:inline-block}
+.basis.selected,.basis.com-target{filter:none;box-shadow:inset 0 0 9px #9cddbf33}

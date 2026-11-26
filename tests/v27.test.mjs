@@ -23,10 +23,10 @@ test('complexity changes the pattern without changing outer size',()=>{
  assert.notEqual(sealMarkup(simple),sealMarkup(nested));
  assert.equal(sealSize(simple),sealSize(nested));
 });
-test('equation fit falls back to explicit ellipsis only when too small',()=>{
+test('single-term equation remains visible even when small',()=>{
  const ink={style:{},getBoundingClientRect:()=>({width:200,height:20})};
  let abbreviated=false;
  const box={clientWidth:80,clientHeight:36,querySelector:()=>ink,classList:{contains:()=>true,toggle:(_c,b)=>abbreviated=b}};
- const doc={querySelectorAll:()=>[box]};fitMath(doc);assert.equal(abbreviated,true);
+ const doc={querySelectorAll:()=>[box]};fitMath(doc);assert.equal(abbreviated,false);assert.equal(ink.style.transform,'scale(0.37)');
  box.clientWidth=160;fitMath(doc);assert.equal(abbreviated,false);
 });

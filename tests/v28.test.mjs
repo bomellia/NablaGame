@@ -24,12 +24,12 @@ test('nested functions preserve outer operation',()=>{
  const expr=f('sin',f('exp',f('log',a(p(x,3),x,n(1)))));
  const variants=previewVariants(expr);
  assert.ok(variants.length);
- assert.ok(variants.every(v=>v.latex.includes('\\sin')&&v.latex.includes('\\cdots')));
+ assert.ok(variants.every(v=>v.latex.includes('\\sin')&&v.latex.includes('e^{')&&v.latex.includes('\\ln')&&v.latex.includes('\\cdots')));
 });
 test('choose detailed readable preview, restore full formula on resize',()=>{
  const ink={innerHTML:'full',style:{},getBoundingClientRect(){return {width:{full:400,detailed:160,compact:75}[this.innerHTML]||400,height:20};}};
  let abbreviated=false;
- const box={clientWidth:100,clientHeight:36,querySelector:()=>ink,
+ const box={clientWidth:106,clientHeight:36,querySelector:()=>ink,
   dataset:{previews:JSON.stringify([{latex:'detailed',text:'detailed'},{latex:'compact',text:'compact'}])},
   classList:{contains:()=>true,toggle:(_c,b)=>abbreviated=b}};
  const root={querySelectorAll:()=>[box]};
