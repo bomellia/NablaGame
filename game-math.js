@@ -2,7 +2,7 @@
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
 import * as R from './symbolic-extended.js?v=0.18';
-import {asymptoticLimit,periodicRange,trigExtrema,trigSumPoleSigns} from './asymptotic.js?v=0.22';
+import {asymptoticLimit,periodicRange,trigExtrema,trigSumPoleSigns,trigLocalLimit} from './asymptotic.js?v=0.22';
 export * from './symbolic-extended.js?v=0.18';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
@@ -127,6 +127,7 @@ export function display(e,wrap=false){
  return wrap?'('+out+')':out;
 }
 function realTreeLimit(e,point='plus',side='two'){
+ if(point==='zero'){const local=trigLocalLimit(e,side);if(local)return local;}
  if(point==='plus'||point==='minus'){
   const phaseExpr=point==='minus'?R.simplify(R.substituteNegX(e)):e;
   const r=trigExtrema(phaseExpr,R.limit);

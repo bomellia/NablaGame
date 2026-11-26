@@ -1,4 +1,4 @@
-import {rationalTrigExtrema} from './trig-rational.js?v=0.22';
+import {rationalTrigExtrema,rationalTrigAtZero} from './trig-rational.js?v=0.22';
 // Structural asymptotic certificates. No numeric sampling of a limit.
 // The comparison variable t tends to +infinity; x is +/-t or +/-1/t.
 // A scale is exp(q2*t²+q1*t)*t^p*(log t)^l.
@@ -224,8 +224,6 @@ function trigMonomial(e){
  return visit(e)&&phase?{coefficient,a,b,phase}:null;
 }
 export function trigExtrema(e,realLimit){
- const rational=rationalTrigExtrema(e,phase=>continuousTail(phase)&&realLimit(phase,'plus').type==='infinity');
- if(rational)return rational;
  const m=trigMonomial(e);
  if(m&&continuousTail(m.phase)&&realLimit(m.phase,'plus').type==='infinity'){
   const {a,b,coefficient:c}=m;
@@ -244,6 +242,8 @@ export function trigExtrema(e,realLimit){
   if(a%2!==0||b%2!==0)return [-hi,hi];
   return c<0?[-hi,-lo]:[lo,hi];
  }
+ const rational=cachedRationalRange(e,realLimit);
+ if(rational)return rational;
  // Monotone transformations of a certified pair of extrema preserve them,
  // including unbounded endpoints. Do not assume all intermediate values occur.
  if(e.t==='a'){
@@ -304,4 +304,23 @@ export function trigSumPoleSigns(e,realLimit){
   }
  }
  return signs.positive||signs.negative?signs:null;
+}
+
+const rangeCache=new WeakMap();
+function cachedRationalRange(e,realLimit){
+ let map=rangeCache.get(realLimit);if(!map){map=new Map();rangeCache.set(realLimit,map);}
+ const key=JSON.stringify(e),cacheable=key.length<=4000;
+ if(cacheable&&map.has(key))return map.get(key);
+ const result=rationalTrigExtrema(e,phase=>continuousTail(phase)&&realLimit(phase,'plus').type==='infinity');
+ if(cacheable){if(map.size>=256)map.delete(map.keys().next().value);map.set(key,result);}
+ return result;
+}
+export function trigLocalLimit(e,side){
+ const one=side=>rationalTrigAtZero(e,phase=>{
+  const u=lead(phase,'zero',side);
+  return u&&u.exact&&u.c!==0&&!u.z?.im&&cmp(u.s,scale0)<0&&realTail(phase,'zero',side)?Math.sign(u.c):null;
+ });
+ if(side!=='two')return one(side);
+ const a=one('plus'),b=one('minus');
+ return a&&b?(JSON.stringify(a)===JSON.stringify(b)?a:{type:'nonexistent'}):null;
 }

@@ -172,7 +172,7 @@ function valueInterval(n,d,l,r){
 function endpoint(a){
  const k=a.n.length-a.d.length;
  if(k<0)return [0,0];
- if(k===0){const v=numeric(q(lc(a.n),lc(a.d)));if(!Number.isFinite(v))bad();return [v,v];}
+ if(k===0){const v=numeric(q(lc(a.n),lc(a.d)));if(!Number.isFinite(v)||v===0)bad();return [v,v];}
  const s=lc(a.n)<0n?-Infinity:Infinity;return [k%2?-s:s,s];
 }
 function extrema(a){
@@ -198,8 +198,8 @@ function extrema(a){
     const v=valueInterval(n,d,l,r);
     if(v&&signInterval(v)){
      const lo=numeric(v[0]),hi=numeric(v[1]);
-     if(Number.isFinite(lo)&&Number.isFinite(hi)&&Math.abs(hi-lo)<=1e-12*Math.max(Math.abs(lo),Math.abs(hi))){
-      values.push((lo+hi)/2);found=true;break;
+     if(Number.isFinite(lo)&&Number.isFinite(hi)&&lo!==0&&hi!==0&&Math.abs(hi-lo)<=1e-12*Math.max(Math.abs(lo),Math.abs(hi))){
+      const v=lo/2+hi/2;if(v===0)bad();values.push(v);found=true;break;
      }
     }
     [l,r]=refine(st,l,r);
@@ -219,5 +219,22 @@ export function rationalTrigExtrema(e,phaseCertified){
   const r=extrema(a);
   if(r.some(v=>Number.isNaN(v)||v!==0&&Math.abs(v)<1e-9))return null;
   return r;
+ }catch{return null;}
+}
+
+// Local half-angle limit when the underlying phase tends to zero with
+// certified nonzero sign. Cancels any removable singularities first.
+export function rationalTrigAtZero(e,phaseSign){
+ try{
+  let a;try{a=convert(e,true);}catch{a=convert(e,false);}
+  if(!a)return null;
+  const sign=phaseSign(a.phase);if(sign!==1&&sign!==-1)return null;
+  const first=p=>p.findIndex(x=>x!==0n);
+  if(z(a.n))return {type:'finite',v:0};
+  const i=first(a.n),j=first(a.d),k=i-j;
+  if(k>0)return {type:'finite',v:0};
+  if(k<0)return {type:'infinity',sign:(a.n[i]*a.d[j]<0n?-1:1)*(k%2?sign:1)};
+  const v=numeric(q(a.n[i],a.d[j]));
+  return Number.isFinite(v)&&Math.abs(v)>=1e-9?{type:'finite',v}:null;
  }catch{return null;}
 }

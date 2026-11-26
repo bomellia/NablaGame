@@ -18,3 +18,5 @@ test('trig rational extrema and removable poles',()=>{
 });
 test('reported sum and cards',()=>{const e=add(div(mul(n(-12),s,pow(t,2)),pow(c,3)),div(mul(n(-12),t),pow(c,4)),div(mul(n(-4),s),pow(c,3)));range(e,-Infinity,Infinity);for(const id of ['LIMSUP','LIMINF']){const st=newGame();st.boards[1]=[e];st.hands[0][0]=id;const p=preview(st,{cardIndex:0,owner:1,target:0});assert.ok(p.ok,p.reason);assert.equal(p.state.winner,0);}});
 test('bounded or unrelated phases are not assigned spurious poles',()=>{assert.notDeepEqual(oscillatoryLimit(fn('tan',s),'sup'),inf(1));});
+
+test('local removable singularity and signed one-sided poles',()=>{const u=div(add(n(1),mul(n(-1),c)),pow(s,2));assert.deepEqual(limit(u,'zero'),{type:'finite',v:.5});assert.deepEqual(limit(div(n(1),add(n(1),mul(n(-1),c))),'zero'),inf(1));assert.deepEqual(limit(pow(s,-1),'zero','plus'),inf(1));assert.deepEqual(limit(pow(s,-1),'zero','minus'),inf(-1));assert.deepEqual(limit(pow(s,-1),'zero'),{type:'nonexistent'});});
