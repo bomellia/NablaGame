@@ -97,3 +97,6 @@ dialog{color:var(--paper);background:#211c17;border:1px solid var(--gold);paddin
 @media(max-width:700px){
  .basis{--seal-base:clamp(70px,24vw,118px);max-height:100%}
 }
+
+/* v0.26: natural advances on independent annular baselines. */
+.annular-math .math-run{font-family:"Cambria Math","STIX Two Text",Georgia,serif;font-weight:400;letter-spacing:0;font-kerning:normal}

@@ -1,6 +1,6 @@
 // Pure presentation: the seal is a deterministic drawing of the AST, not a game statistic.
 import {displayNumber} from './number-format.js?v=0.15';
-import {curvedMath,annularLayout} from './annular-math.js?v=0.25';
+import {curvedMath,annularLayout} from './annular-math.js?v=0.26';
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const glyphs=Array.from('ᚨᛒᚲᛞᛖᚠᚷᚺᛁᛃᚲᛚᛗᚾᛟᛈᚲᚱᛊᛏᚢᚹᚹᚲᛇᛉ');
 export const rune=s=>String(s).toUpperCase().replace(/[A-Z]/g,c=>glyphs[alphabet.indexOf(c)]);
@@ -47,7 +47,7 @@ function arc(r){const a=pt(r,130),b=pt(r,410);return 'M'+a.join(' ')+' A'+r+' '+
 export function sealSize(e){const a=annularLayout(e);return Math.min(1.5,Math.max(1,(a.outer+(a.fractional?9:5))/84));}
 export function sealMarkup(e,id='seal'){
  id=String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
- const p=profile(e),n=p.sides,math=curvedMath(e),rim=math.outer,core=43;
+ const p=profile(e),n=p.sides,math=curvedMath(e,id),rim=math.outer,core=43;
  const lines=[];
  lines.push('<circle class="seal-rim" r="'+rim+'"/><circle r="'+(rim-4)+'" class="seal-line"/>');
  if(math.fractional)lines.push('<circle class="fraction-ring seal-line" r="'+(rim+5)+'"/>');

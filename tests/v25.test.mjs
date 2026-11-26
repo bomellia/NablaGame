@@ -23,4 +23,4 @@ test('large sums remain finite, with explicit ellipsis if too dense',()=>{
  assert.ok(sealSize(e)<=1.5);
 });
 
-test('power of exponential preserves grouping and inner glyphs have finite widths',()=>{const b=mathBox(p(f('exp',x),2));assert.equal(b.items.filter(i=>i.type==='glyph')[0].text,'(');assert.match(curvedMath(p(x,-1)).markup,/textLength="[0-9.]+"/);});
+test('power of exponential preserves grouping and inner glyphs have finite widths',()=>{const b=mathBox(p(f('exp',x),2));assert.equal(b.items.filter(i=>i.type==='glyph')[0].text,'(');assert.match(curvedMath(p(x,-1)).markup,/<textPath /);assert.doesNotMatch(curvedMath(p(x,-1)).markup,/textLength=/);});

@@ -3,11 +3,13 @@
 import {displayNumber,fractionParts} from './number-format.js?v=0.15';
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const names={log:'ln',asin:'arcsin',acos:'arccos',atan:'arctan',sign:'sgn',asinh:'arsinh',acosh:'arcosh',atanh:'artanh'};
-const width=c=>c===' '? .28:'il1|'.includes(c)?.32:'()[]'.includes(c)?.39:'−+=·'.includes(c)?.66:'.'.includes(c)?.27:.58;
+// Conservative advance estimates for the math serif face; used only for
+// positioning the boxes, never for horizontally stretching the glyphs.
+const width=c=>c===' '?.28:'il1|'.includes(c)?.32:'()[]'.includes(c)?.39:'−+=·'.includes(c)?.66:'.'.includes(c)?.27:'mwMW'.includes(c)?.85:'frt'.includes(c)?.4:'0123456789'.includes(c)?.55:.58;
 const box=(w,top,bottom,items)=>({w,top,bottom,items});
 function text(s,italic=false){
  let w=0;const items=[];
- for(const c of String(s)){const a=width(c);if(c!==' ')items.push({type:'glyph',x:w+a/2,y:0,w:a,size:1,text:c,italic});w+=a;}
+ for(const c of String(s)){const a=width(c);items.push({type:'glyph',x:w+a/2,y:0,w:a,size:1,text:c,italic});w+=a;}
  return box(w,.79,.23,items);
 }
 function place(b,x=0,y=0,k=1){
@@ -96,52 +98,89 @@ export function mathBox(e){
  }
  return walk(e);
 }
+
+// Merge adjacent glyphs on the same baseline into naturally shaped runs.
+// Fractions and scripts retain their own baseline and font size.
+export function textRuns(b){
+ const rows=new Map();
+ for(const i of b.items){
+  if(i.type!=='glyph')continue;
+  const key=i.y.toFixed(7)+'/'+i.size.toFixed(7);
+  if(!rows.has(key))rows.set(key,[]);
+  rows.get(key).push(i);
+ }
+ const runs=[];
+ for(const glyphs of rows.values()){
+  glyphs.sort((a,b)=>a.x-b.x);
+  let run=null;
+  for(const g of glyphs){
+   const left=g.x-g.w/2,right=g.x+g.w/2;
+   if(!run||Math.abs(left-run.right)>1e-5){
+    run={left,right,y:g.y,size:g.size,parts:[]};runs.push(run);
+   }else run.right=right;
+   const prev=run.parts.at(-1);
+   if(prev&&prev.italic===g.italic)prev.text+=g.text;
+   else run.parts.push({text:g.text,italic:g.italic});
+  }
+ }
+ return runs;
+}
+const MAX_SPAN=105*Math.PI/180;
+const MAX_OUTER=124;
 export function annularLayout(e){
  let b=mathBox(e),scale=23;
- // Preserve the inner geometry. Allocate radial room for the complete box.
- // For very long expressions choose a larger seal first, then shrink the ink;
- // full unabridged KaTeX is still available in the inspection dialog.
+ const fractional=b.items.some(i=>i.type==='fraction');
+ // Reserve enough radius at the INNERMOST baseline as well, so neither
+ // the denominator nor a nested script has to wrap steeply around the rim.
  function dims(){
-  const r=43+Math.max(4,b.bottom*scale)+5;
-  const outer=Math.max(79,r+b.top*scale+6);
+  const r=Math.max(43+Math.max(4,b.bottom*scale)+5,
+      b.w*scale/MAX_SPAN+Math.max(0,b.bottom*scale));
+  const outer=Math.max(fractional?97:79,r+b.top*scale+8);
   return {r,outer};
  }
  let {r,outer}=dims();
- for(let i=0;i<12;i++){
-  const k=Math.min(1,124/outer,4.55*r/Math.max(1,b.w*scale));
-  if(k>.995)break;
-  scale*=k*.97;({r,outer}=dims());
+ for(let i=0;i<20&&outer>MAX_OUTER;i++){
+  scale*=Math.min(.98,MAX_OUTER/outer);({r,outer}=dims());
  }
- const fractional=b.items.some(i=>i.type==='fraction');
- // Fractions always have an additional boundary outside the core.
- if(fractional)outer=Math.max(97,outer);
- if(scale<5){
-  // Never present half a fraction as a valid equation. Keep the ellipsis
-  // explicit and direct the player to the full equation on tap.
-  b=text('…');scale=21;r=59;outer=fractional?97:79;
+ if(scale<5||outer>MAX_OUTER+.01){
+  b=text('…');scale=23;r=59;outer=fractional?97:86;
  }
  return {b,scale,r,outer,fractional};
 }
-export function curvedMath(e){
- const layout=annularLayout(e),{b,scale,r,outer,fractional}=layout;
- const angle=x=>((x-b.w/2)*scale/r);
- const point=(x,y)=>{const a=angle(x),rr=r-y*scale;return [rr*Math.sin(a),-rr*Math.cos(a)];};
- const fmt=x=>Number(x.toFixed(3));
+export function curvedMath(e,id='seal'){
+ id=String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
+ const {b,scale,r,outer,fractional}=annularLayout(e);
+ // Tangential position in the flat layout is preserved at each radius.
+ // This keeps exponents close to their base and denominator characters
+ // aligned without squeezing the characters to fit the smaller circle.
+ const radius=y=>r-y*scale;
+ const angle=(x,y=0)=>(x-b.w/2)*scale/radius(y);
+ const polar=(rr,a)=>[rr*Math.sin(a),-rr*Math.cos(a)];
+ const point=(x,y)=>polar(radius(y),angle(x,y));
+ const fmt=x=>Number(x.toFixed(4));
  const pair=p=>p.map(fmt).join(' ');
- const items=b.items.map(i=>{
-  if(i.type==='glyph'){
-   const [x,y]=point(i.x,i.y),a=angle(i.x)*180/Math.PI;
-   // On inner bands the available tangential width is smaller. Fit the glyph
-   // to that physical arc interval, preserving the vertical math layout.
-   const glyphWidth=i.w*scale*Math.min(1,(r-i.y*scale)/r)*.96;
-   return '<text class="inscription math-glyph" x="'+fmt(x)+'" y="'+fmt(y)+'" transform="rotate('+fmt(a)+' '+fmt(x)+' '+fmt(y)+')" text-anchor="middle" textLength="'+fmt(glyphWidth)+'" lengthAdjust="spacingAndGlyphs" font-size="'+fmt(i.size*scale)+'"'+(i.italic?' font-style="italic"':'')+'>'+esc(i.text)+'</text>';
-  }
+ const arc=(rr,a,z)=>'M'+pair(polar(rr,a))+' A'+fmt(rr)+' '+fmt(rr)+' 0 '+(z-a>Math.PI?1:0)+' 1 '+pair(polar(rr,z));
+ const defs=[],ink=[];
+ const runs=textRuns(b);
+ for(let i=0;i<runs.length;i++){
+  const run=runs[i],rr=radius(run.y),mid=(run.left+run.right)/2;
+  // A shared 105-degree visible inscription sector. Provide a slightly
+  // longer invisible path so natural glyph advances are never clipped.
+  const half=MAX_SPAN/2+.10,a=angle(mid,run.y);
+  const pathId=id+'-arc-'+i;
+  defs.push('<path id="'+pathId+'" d="'+arc(rr,-half,half)+'"/>');
+  const offset=(a+half)/(2*half)*100;
+  const content=run.parts.map(p=>'<tspan'+(p.italic?' font-style="italic"':'')+'>'+esc(p.text)+'</tspan>').join('');
+  ink.push('<text class="inscription math-run" text-anchor="middle" font-size="'+fmt(run.size*scale)+'" xml:space="preserve"><textPath href="#'+pathId+'" startOffset="'+fmt(offset)+'%">'+content+'</textPath></text>');
+ }
+ for(const i of b.items){
+  if(i.type==='glyph')continue;
   let d='';
   if(i.type==='fraction'){
-   const [a,z]=i.points,rr=r-a[1]*scale;
-   d='M'+pair(point(...a))+' A'+fmt(rr)+' '+fmt(rr)+' 0 '+(angle(z[0])-angle(a[0])>Math.PI?1:0)+' 1 '+pair(point(...z));
+   const [a,z]=i.points;
+   d=arc(radius(a[1]),angle(a[0],a[1]),angle(z[0],z[1]));
   }else d=i.points.map((p,j)=>(j?'L':'M')+pair(point(...p))).join(' ');
-  return '<path class="math-rule '+(i.type==='fraction'?'fraction-rule':'radical-rule')+'" d="'+d+'" fill="none" stroke-width="'+fmt(i.stroke*scale)+'"/>';
- }).join('');
- return {outer,r,fractional,markup:'<g class="annular-math">'+items+'</g>'};
+  ink.push('<path class="math-rule '+(i.type==='fraction'?'fraction-rule':'radical-rule')+'" d="'+d+'" fill="none" stroke-width="'+fmt(i.stroke*scale)+'"/>');
+ }
+ return {outer,r,fractional,markup:'<g class="annular-math"><defs>'+defs.join('')+'</defs>'+ink.join('')+'</g>'};
 }

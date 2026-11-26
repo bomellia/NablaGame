@@ -1,7 +1,7 @@
 import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard,display,resign} from './engine.js?v=0.23';
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.20';
 import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.20';
-import {rune,sealMarkup,sealSize,profile,logRune} from './sigil.js?v=0.25';
+import {rune,sealMarkup,sealSize,profile,logRune} from './sigil.js?v=0.26';
 import {fitMath} from './fit-math.js?v=0.24';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
