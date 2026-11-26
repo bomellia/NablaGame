@@ -74,7 +74,7 @@ export function mathBox(e){
     if(v.e===1)return next(v.b);
     if(v.e<0)return fraction(text('1'),next(v.e===-1?v.b:{...v,e:-v.e}));
     if(v.e===.5)return radical(next(v.b));
-    const b=['x','f'].includes(v.b.t)||v.b.t==='n'&&v.b.v>=0&&Number.isInteger(v.b.v)?next(v.b):bracket(next(v.b));
+    const b=v.b.t==='x'||v.b.t==='f'&&v.b.f!=='exp'||v.b.t==='n'&&v.b.v>=0&&Number.isInteger(v.b.v)?next(v.b):bracket(next(v.b));
     return power(b,number(v.e));
    }
    case 'f':{
@@ -97,7 +97,7 @@ export function mathBox(e){
  return walk(e);
 }
 export function annularLayout(e){
- let b=mathBox(e),scale=21;
+ let b=mathBox(e),scale=23;
  // Preserve the inner geometry. Allocate radial room for the complete box.
  // For very long expressions choose a larger seal first, then shrink the ink;
  // full unabridged KaTeX is still available in the inspection dialog.
@@ -131,7 +131,10 @@ export function curvedMath(e){
  const items=b.items.map(i=>{
   if(i.type==='glyph'){
    const [x,y]=point(i.x,i.y),a=angle(i.x)*180/Math.PI;
-   return '<text class="inscription math-glyph" x="'+fmt(x)+'" y="'+fmt(y)+'" transform="rotate('+fmt(a)+' '+fmt(x)+' '+fmt(y)+')" text-anchor="middle" font-size="'+fmt(i.size*scale)+'"'+(i.italic?' font-style="italic"':'')+'>'+esc(i.text)+'</text>';
+   // On inner bands the available tangential width is smaller. Fit the glyph
+   // to that physical arc interval, preserving the vertical math layout.
+   const glyphWidth=i.w*scale*Math.min(1,(r-i.y*scale)/r)*.96;
+   return '<text class="inscription math-glyph" x="'+fmt(x)+'" y="'+fmt(y)+'" transform="rotate('+fmt(a)+' '+fmt(x)+' '+fmt(y)+')" text-anchor="middle" textLength="'+fmt(glyphWidth)+'" lengthAdjust="spacingAndGlyphs" font-size="'+fmt(i.size*scale)+'"'+(i.italic?' font-style="italic"':'')+'>'+esc(i.text)+'</text>';
   }
   let d='';
   if(i.type==='fraction'){
