@@ -20,4 +20,4 @@ test('composition both directions and undefined constant',()=>{
  assert.equal(preview(s,{cardIndex:0,partnerIndex:1,owner:1,target:0}).ok,false);
  const moves=legalMoves(s).filter(m=>m.cardIndex===0&&m.partnerIndex===1&&m.owner===1&&m.target===0);assert.equal(moves.length,2);
 });
-test('new deck and idempotent legacy migration',()=>{const s=newGame();assert.equal(makeDeck().length,113);assert.equal(makeDeck(false).length,105);assert.equal(s.deck.length,97);delete s.compositionDeck;s.deck=s.deck.filter(id=>id!=='COMPOSE');s.hands=s.hands.map(h=>h.map(id=>id==='COMPOSE'?'X':id));const a=normalizeGame(s),b=normalizeGame(a);assert.equal(inv(a).filter(id=>id==='COMPOSE').length,2);assert.deepEqual(a,b);});
+test('new deck and idempotent legacy migration',()=>{const s=newGame();assert.equal(makeDeck().length,127);assert.equal(makeDeck(false).length,105);assert.equal(s.deck.length,111);delete s.compositionDeck;s.deck=s.deck.filter(id=>id!=='COMPOSE');s.hands=s.hands.map(h=>h.map(id=>id==='COMPOSE'?'X':id));const a=normalizeGame(s),b=normalizeGame(a);assert.equal(inv(a).filter(id=>id==='COMPOSE').length,2);assert.deepEqual(a,b);});

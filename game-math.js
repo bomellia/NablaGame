@@ -68,6 +68,10 @@ export function fn(name,e){
 export function fromCard(id){
  const x=X();
  switch(id){
+  case 'X3':return power(x,3);
+  case 'ABS_X':return F('abs',x);
+  case 'SINH_X':return F('sinh',x);
+  case 'COSH_X':return F('cosh',x);
   case 'NEGEXP':return F('exp',times(n(-1),x));
   case 'TAN':return F('tan',x);
   case 'LN_X':return F('log',x);

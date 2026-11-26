@@ -1,21 +1,29 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.20';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.33';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose} from './game-math.js?v=0.22';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose} from './game-math.js?v=0.33';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
 }
-// Both players receive the exact same three independent random bases.
-// Function classes are mirrored to eliminate start-position strength disparity.
-export function initialBoard(random=Math.random){
-  const choose=options=>options[Math.min(options.length-1,Math.floor(random()*options.length))];
-  return [
-    choose([fromCard('X2'),mul(fromCard('X2'),x())]),
-    choose([fromCard('SIN'),fromCard('COS')]),
-    choose([fromCard('EXP'),fn('exp',mul(constant(-1),x()))])
-  ].map(simplify);
+// Pair openings by family and approximate complexity, then independently
+// randomize which player gets each member. No redraw loop or identical bases.
+export function initialBoards(random=Math.random){
+  const X=x(),Q=fromCard('X2'),C=mul(Q,X),n=constant;
+  const pairs=[
+    [[Q,C],[add(Q,X),add(Q,mul(n(-1),X))],[add(C,X),add(C,mul(n(-1),X))]],
+    [[fromCard('SIN'),fromCard('COS')],[fn('sin',mul(n(2),X)),fn('cos',mul(n(2),X))]],
+    [[fromCard('EXP'),fn('exp',mul(n(-1),X))],[fn('exp',mul(n(2),X)),fn('exp',mul(n(-2),X))]]
+  ];
+  const boards=[[],[]];
+  for(const family of pairs){
+    const pair=family[Math.min(family.length-1,Math.floor(random()*family.length))];
+    const first=random()<.5?0:1;
+    boards[0].push(simplify(pair[first]));boards[1].push(simplify(pair[1-first]));
+  }
+  return boards;
 }
+export function initialBoard(random=Math.random){return initialBoards(random)[0];}
 
 /** Never turn a mathematically computable derivative into an inert D symbol.
  * No fixed AST or display length cap is applied. */
@@ -77,6 +85,17 @@ export function normalizeGame(game){
     for(let i=count;i<2;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,'COMPOSE');
     state.compositionDeck=true;
   }
+  // Preserve ongoing matches and insert only the new expansion inventory once.
+  if(!state.strategyDeck){
+    if(state.extended!==false){
+      const inventory=[...state.deck,...state.hands.flat(),...(state.pending?.spent||[])];
+      for(const card of Object.values(CARD_MAP).filter(c=>c.strategy)){
+        const count=inventory.filter(id=>id===card.id).length;
+        for(let i=count;i<card.count;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,card.id);
+      }
+    }
+    state.strategyDeck=true;
+  }
   if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
   state.version=14;
   return state;
@@ -85,9 +104,9 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   const deck=shuffle(makeDeck(extended),random);
   const hands=[[],[]];
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
-  const opening=initialBoard(random);
-  return {version:14,boards:[copy(opening),copy(opening)],hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,extended,difficulty,
+  const boards=initialBoards(random);
+  return {version:14,boards,hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
+    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -111,11 +130,11 @@ export function validate(s,move) {
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
     if(move.partnerIndex===move.cardIndex || !Number.isInteger(move.partnerIndex) || !FUNCTION_CARDS.includes(s.hands[actor][move.partnerIndex]))throw new Unsupported('別の関数カードが必要です');
-    if(['DIV','COMPOSE'].includes(cardId)&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported(cardId==='COMPOSE'?'合成順序（外側・内側）を指定してください':'除算の向きを指定してください');
+    if(['DIV','COMPOSE','SUB'].includes(cardId)&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported(cardId==='COMPOSE'?'合成順序（外側・内側）を指定してください':'演算の順序を指定してください');
   }
   if(card.kind==='constant') {
     if(!CONSTANTS.includes(move.C))throw new Unsupported('定数Cを選択してください');
-    if(cardId==='PLUS_C'&&move.C===0)throw new Unsupported('追加カードのCは0以外にしてください');
+    if(['PLUS_C','SHIFT'].includes(cardId)&&move.C===0)throw new Unsupported('追加カードのCは0以外にしてください');
   }
   if(card.kind==='limitZero' && !['two','plus','minus'].includes(move.side))throw new Unsupported('0への極限の向きを選択してください');
   return card;
@@ -125,6 +144,13 @@ function opSingle(id,basis,move,partner) {
     case 'DIFF':return safeDerivative(basis);
     case 'INTEGRATE':return safeIntegral(basis,move.C);
     case 'MUL':return mul(basis,partner);
+    case 'ADD':return add(basis,partner);
+    case 'SUB':return move.direction==='cardOverBasis'?add(partner,mul(constant(-1),basis)):add(basis,mul(constant(-1),partner));
+    case 'SHIFT':return compose(basis,add(x(),constant(move.C)));
+    case 'RECIP':{
+      if(basis.t==='n'&&basis.v===0)throw new Unsupported('0の逆数は定義されません');
+      return div(constant(1),basis);
+    }
     case 'COMPOSE':return move.direction==='cardOverBasis'?compose(partner,basis):compose(basis,partner);
     case 'DIV': {
       const numerator = move.direction==='cardOverBasis'?partner:basis;
@@ -274,9 +300,9 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         if(card.kind==='binary') {
           choices=[];
           for(let j=0;j<s.hands[s.turn].length;j++) if(i!==j&&FUNCTION_CARDS.includes(s.hands[s.turn][j]))
-            for(const direction of (['DIV','COMPOSE'].includes(card.id)?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
+            for(const direction of (['DIV','COMPOSE','SUB'].includes(card.id)?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
         }
-        if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(card.id==='PLUS_C'&&c===0)).map(C=>({C}));
+        if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(['PLUS_C','SHIFT'].includes(card.id)&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
         for(const opts of choices) {
           const move={cardIndex:i,owner,target,...opts};
@@ -297,7 +323,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
 }
 function valueOf(e) {
   const text=display(e);
-  let score=1;
+  let score=e.t==='n'?0.35:1;
   if(/arcsin|arccos|√|log|ln\|/.test(text))score+=0.55;
   if(/sin|cos|exp/.test(text))score+=0.3;
   if(text.length>28)score-=.1;
@@ -311,7 +337,8 @@ function scoreMove(state,move,after,difficulty) {
   const ownValue=after.boards[a].reduce((acc,e)=>acc+valueOf(e),0);
   const oppValue=after.boards[enemy].reduce((acc,e)=>acc+valueOf(e),0);
   const used=Number.isInteger(move.partnerIndex)&&move.partnerIndex>=0?2:1;
-  const raw=otherDelta*14+ownDelta*12+0.9*(ownValue-oppValue)-used*0.3;
+  const unchanged=JSON.stringify(state.boards)===JSON.stringify(after.boards);
+  const raw=otherDelta*14+ownDelta*12+0.9*(ownValue-oppValue)-used*0.3-(unchanged?3:0);
   if(difficulty==='easy') return raw*.3+Math.random()*15;
   if(difficulty==='hard') return raw+Math.random()*1.3;
   return raw+Math.random()*5;

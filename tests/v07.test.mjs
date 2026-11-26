@@ -25,11 +25,11 @@ test('general normalized basis dependence sees multiples of tan and rational fun
  const rational=div(add(pow(X,2),n(-1)),add(X,n(-1)));
  assert.equal(reduceBasis([rational,add(X,n(1))]).kept.length,1);
 });
-test('initial boards are shared and vary independently from deck shuffle',()=>{
+test('initial boards are asymmetric and vary independently from deck shuffle',()=>{
  const a=initialBoard(()=>.1),b=initialBoard(()=>.9);
  assert.equal(a.length,3);assert.equal(b.length,3);
  assert.notDeepEqual(a,b);
- const s=newGame({random:()=>.5});assert.deepEqual(s.boards[0],s.boards[1]);
+ const s=newGame({random:()=>.5});assert.notDeepEqual(s.boards[0],s.boards[1]);
  assert.equal(s.boards[0].some(e=>e.t==='n'),false);
 });
 test('v14 limit-card frequencies',()=>{

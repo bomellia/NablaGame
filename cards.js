@@ -36,6 +36,15 @@ export const CARDS = [
   {id:'INT_HALF',label:'∫₀∞',kind:'single',count:2,description:'半無限区間の広義積分（結果確定時のみ）'},
   {id:'INT_ALL',label:'∫₋∞∞',kind:'single',count:2,description:'全実数区間の広義積分（結果確定時のみ）'},
   {id:'LAPLACE',label:'ℒ',kind:'single',count:2,description:'ラプラス変換（結果確定時のみ）'},
+  // Tactical expansion (v0.33): new functions and noncommutative arithmetic.
+  {id:'X3',label:'x³',kind:'function',count:2,expansion:true,strategy:true,description:'三次関数を追加・演算材料に使用'},
+  {id:'ABS_X',label:'|x|',kind:'function',count:2,expansion:true,strategy:true,description:'絶対値関数を追加・演算材料に使用'},
+  {id:'SINH_X',label:'sinh x',kind:'function',count:1,expansion:true,strategy:true,description:'双曲線正弦関数'},
+  {id:'COSH_X',label:'cosh x',kind:'function',count:1,expansion:true,strategy:true,description:'双曲線余弦関数'},
+  {id:'ADD',label:'+',kind:'binary',count:2,expansion:true,strategy:true,description:'場の基底と関数カードを加算'},
+  {id:'SUB',label:'−',kind:'binary',count:2,expansion:true,strategy:true,description:'場の基底と関数カードを減算（選択順）'},
+  {id:'SHIFT',label:'x↦x+C',kind:'constant',count:2,expansion:true,strategy:true,description:'f(x)をf(x+C)へ変換（C≠0）'},
+  {id:'RECIP',label:'1/f',kind:'single',count:2,expansion:true,strategy:true,description:'指定した基底の逆数（逆関数ではない）'},
   // Prototype expansion cards (opt-in deck option)
   {id:'PLUS_C',label:'+C',kind:'constant',count:5,expansion:true,description:'指定した基底に定数Cを加える（独自カード）'},
   {id:'REFLECT',label:'x↦−x',kind:'single',count:3,expansion:true,description:'f(x)をf(−x)へ変換する（独自カード）'}

@@ -7,12 +7,12 @@ function scenario(hand,boards=[['ONE','X','X2'],['ONE','X','X2']]){
   const s=newGame();s.hands[0]=hand;s.boards=boards.map(b=>b.map(fromCard));s.turn=0;s.turns=1;return s;
 }
 test('deck composition and fixed hand sizes',()=>{
-  assert.equal(makeDeck(false).length,105);assert.equal(makeDeck(true).length,113);
+  assert.equal(makeDeck(false).length,105);assert.equal(makeDeck(true).length,127);
   assert.equal(newGame({extended:false}).deck.length,89);
 });
-test('initial boards are mirrored, nonconstant and three dimensional; hands draw randomly',()=>{
+test('initial boards are asymmetric, nonconstant and three dimensional; hands draw randomly',()=>{
   const s=newGame();assert.equal(s.boards[0].length,3);assert.equal(s.boards[1].length,3);
-  assert.deepEqual(s.boards[0],s.boards[1]);
+  assert.notDeepEqual(s.boards[0],s.boards[1]);
   assert.equal(s.boards[0].some(e=>e.t==='n'),false);
   assert.deepEqual(s.hands.map(h=>h.length),[8,8]);
 });
