@@ -1,8 +1,9 @@
 // Pure presentation: the seal is a deterministic drawing of the AST, not a game statistic.
 import {displayNumber} from './number-format.js?v=0.15';
-const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const glyphs=Array.from('ᚨᛒᚲᛞᛖᚠᚷᚺᛁᛃᚲᛚᛗᚾᛟᛈᚲᚱᛊᛏᚢᚹᚹᚲᛇᛉ');
-export const rune=s=>String(s).toUpperCase().replace(/[A-Z]/g,c=>glyphs[alphabet.indexOf(c)]);
+// Visual substitution, not historical transliteration. Keep Latin letters
+// when no rune has a recognizable shape; never conflate different letters.
+const glyphs=Object.freeze({"A":"A","B":"ᛒ","C":"C","D":"D","E":"E","F":"ᚠ","G":"G","H":"ᚺ","I":"ᛁ","J":"J","K":"K","L":"L","M":"ᛗ","N":"N","O":"ᛜ","P":"ᚹ","Q":"Q","R":"ᚱ","S":"ᛋ","T":"T","U":"U","V":"V","W":"W","X":"ᚷ","Y":"ᛉ","Z":"Z"});
+export const rune=s=>String(s).toUpperCase().replace(/[A-Z]/g,c=>glyphs[c]);
 export const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sup={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
 export function profile(e){

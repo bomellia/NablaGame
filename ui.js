@@ -2,7 +2,7 @@ import {newGame,normalizeGame,preview,applyMove,chooseComMove,legalMoves,getCard
 import {FUNCTION_CARDS,CONSTANTS} from './cards.js?v=0.20';
 import {toLatex,cardLatex,mathMarkup,escapeText as esc} from './latex.js?v=0.28';
 import {previewVariants} from './formula-preview.js?v=0.29';
-import {rune,sealMarkup,logRune} from './sigil.js?v=0.28';
+import {rune,sealMarkup,logRune} from './sigil.js?v=0.30';
 import {fitMath} from './fit-math.js?v=0.29';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
