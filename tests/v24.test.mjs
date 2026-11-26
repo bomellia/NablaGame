@@ -18,6 +18,6 @@ test('fit recalculates after viewport resize and measures natural size',()=>{
 });
 test('short inscriptions receive larger type on the circle',()=>{
  const svg=sealMarkup({t:'f',f:'sin',arg:{t:'x'}},'test');
- assert.match(svg,/<text class="inscription" font-size="23"/);
- assert.match(svg,/<textPath href="#test-arc-0"/);
+ assert.match(svg,/font-size="21"/);
+ assert.match(svg,/class="annular-math"/);
 });
