@@ -1,4 +1,4 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.39';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.44';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
   hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.36';
@@ -173,7 +173,7 @@ export function validate(s,move) {
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
     if(move.partnerIndex===move.cardIndex || !Number.isInteger(move.partnerIndex) || !FUNCTION_CARDS.includes(s.hands[actor][move.partnerIndex]))throw new Unsupported('別の関数カードが必要です');
-    if(['DIV','COMPOSE','SUB'].includes(cardId)&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported(cardId==='COMPOSE'?'合成順序（外側・内側）を指定してください':'演算の順序を指定してください');
+    if(cardId==='COMPOSE'&&!['basisOverCard','cardOverBasis'].includes(move.direction))throw new Unsupported('合成順序（外側・内側）を指定してください');
   }
   if(card.kind==='constant') {
     if(!CONSTANTS.includes(move.C))throw new Unsupported('定数Cを選択してください');
@@ -198,8 +198,8 @@ function opSingle(id,basis,move,partner) {
     }
     case 'COMPOSE':return move.direction==='cardOverBasis'?compose(partner,basis):compose(basis,partner);
     case 'DIV': {
-      const numerator = move.direction==='cardOverBasis'?partner:basis;
-      const denominator= move.direction==='cardOverBasis'?basis:partner;
+      const numerator=basis;
+      const denominator=partner;
       if(denominator.t==='n' && denominator.v===0)throw new Unsupported('恒等的に0となる式では除算できません');
       return div(numerator,denominator);
     }
@@ -299,7 +299,15 @@ export function applyMove(s,move,trace=null) {
     if(card.kind==='binary')used.push(move.partnerIndex);
   }
   const preCount=own.length;
-  const resolved=reduceBasis(own);
+  // Board arithmetic changes the first operand only. Keep every unaffected
+  // independent direction before testing the rewritten target for dependence.
+  let resolved;
+  if(card.kind==='boardBinary'){
+    const order=own.map((_,i)=>i).filter(i=>i!==move.target).concat(move.target);
+    const reduced=reduceBasis(order.map(i=>own[i])),removed=new Set(reduced.removed);
+    const kept=order.filter((_,i)=>!removed.has(i)).map((i,j)=>({i,e:reduced.kept[j]})).sort((a,b)=>a.i-b.i);
+    resolved={kept:kept.map(z=>z.e),removed:reduced.removed.map(i=>order[i]).sort((a,b)=>a-b)};
+  }else resolved=reduceBasis(own);
   ns.boards[move.owner]=resolved.kept;
   const erased=preCount-resolved.kept.length;
   if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
@@ -346,7 +354,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         if(card.kind==='binary') {
           choices=[];
           for(let j=0;j<s.hands[s.turn].length;j++) if(i!==j&&FUNCTION_CARDS.includes(s.hands[s.turn][j]))
-            for(const direction of (['DIV','COMPOSE','SUB'].includes(card.id)?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
+            for(const direction of (card.id==='COMPOSE'?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
         }
         if(card.kind==='boardBinary')choices=s.boards[owner].map((_,otherTarget)=>({otherTarget})).filter(z=>z.otherTarget!==target);
         if(card.kind==='scale')choices=SCALES.map(a=>({a}));

@@ -44,7 +44,7 @@ test('limsup of a sin + b cos + 1 is 1+sqrt(a²+b²)',()=>{
   assert.equal(v.type,'finite');assert.equal(v.v,6);
 });
 test('invalid ratio by zero is rejected',()=>{
-  const s=scenario(['DIV','ZERO']);const result=preview(s,{cardIndex:0,owner:1,target:1,partnerIndex:1,direction:'basisOverCard'});
+  const s=scenario(['DIV','ZERO'],[['ONE','X','X2'],['ZERO','X','X2']]);const result=preview(s,{cardIndex:0,owner:1,target:1,otherTarget:0});
   assert.equal(result.ok,false);
 });
 test('log of a negative constant and sqrt of negative even power vanish',()=>{
