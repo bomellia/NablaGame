@@ -4,14 +4,16 @@ import {makeDeck,LIMIT_CARDS,CARD_MAP} from '../cards.js';
 import {x,constant as n,fn,pow} from '../game-math.js';
 const X=x(),inv=s=>[...s.deck,...s.hands.flat(),...(s.pending?.spent||[])].sort();
 const go=(s,m)=>{const r=preview(s,m);assert.ok(r.ok,r.reason);return r.state;};
-test('limit stockpiling cannot sweep three bases in one turn',()=>{
+test('limit elimination shares the common bonus rule',()=>{
  const s=newGame();s.boards[1]=[X,pow(X,2),pow(X,3)];s.hands[0]=['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','DIFF','X','SIN','COS'];
- const a=go(s,{cardIndex:0,owner:1,target:0});assert.equal(a.boards[1].length,2);assert.equal(a.turn,1);assert.equal(a.pending,null);assert.equal(a.hands[0].length,8);assert.deepEqual(inv(a),inv(s));
+ const a=go(s,{cardIndex:0,owner:1,target:0});assert.equal(a.boards[1].length,2);assert.equal(a.turn,0);assert.equal(a.pending.phase,'bonus');assert.equal(a.hands[0].length,7);assert.deepEqual(inv(a),inv(s));
+ const b=go(a,{cardIndex:0,owner:1,target:0});assert.equal(b.pending.bonusCount,2);
+ const c=go(b,{cardIndex:0,owner:1,target:0,side:'two'});assert.equal(c.winner,0);assert.equal(c.pending,null);assert.deepEqual(inv(c),inv(s));
 });
-test('nonlimit bonus still chains but a limit kill ends it',()=>{
+test('nonlimit and limit eliminations both grant bonus',()=>{
  const s=newGame();s.boards[1]=[n(1),X,pow(X,2)];s.hands[0]=['DIFF','LIM_PLUS','LIM_MINUS','LIM_ZERO','X','SIN','COS','MUL'];
  const a=go(s,{cardIndex:0,owner:1,target:0});assert.equal(a.pending.phase,'bonus');
- const b=go(a,{cardIndex:0,owner:1,target:0});assert.equal(b.boards[1].length,1);assert.equal(b.turn,1);assert.equal(b.pending,null);assert.deepEqual(inv(b),inv(s));
+ const b=go(a,{cardIndex:0,owner:1,target:0});assert.equal(b.boards[1].length,1);assert.equal(b.turn,0);assert.equal(b.pending.phase,'bonus');assert.equal(b.pending.bonusCount,2);assert.deepEqual(inv(b),inv(s));
 });
 test('balanced deck and v36 migration conserve counts and hand sizes',()=>{
  const s=newGame();delete s.rules37;const deck=makeDeck();for(const [id,replacement] of [['COMPOSE','LIM_PLUS'],['MUL','LIM_MINUS'],['INT_ALL','LIM_ZERO'],['CAUCHY','LIM_ZERO']])deck[deck.indexOf(id)]=replacement;

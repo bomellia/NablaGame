@@ -97,7 +97,6 @@ export function normalizeGame(game){
     state.strategyDeck=true;
   }
   if(!state.rules34||!state.rules37){
-    const legacyLimitBonus=state.pending?.phase==='bonus'&&LIMIT_CARDS.includes(state.pending.spent?.at(-1));
     const convert=id=>id==='SHIFT'?'SCALE':id;
     state.deck=state.deck.map(convert).filter(id=>CARD_MAP[id]);
     state.hands=state.hands.map(h=>h.map(convert));
@@ -116,7 +115,6 @@ export function normalizeGame(game){
       state.boards=state.boards.map(b=>b.slice(0,MAX_DIMENSION));
       state.log.unshift('次元上限変更により5個目以降の基底を除外しました。');
     }
-    if(legacyLimitBonus&&state.pending?.phase==='bonus')endTurn(state,state.turn);
     state.rules34=true;state.rules37=true;
   }
   if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
@@ -287,7 +285,7 @@ export function applyMove(s,move,trace=null) {
   if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
-  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}${erased&&move.owner===1-actor&&LIMIT_CARDS.includes(id)?'（極限消去・ターン終了）':''}`);
+  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
   ns.log=ns.log.slice(0,16);
   const spent=consume(ns,actor,used);
   finish(ns);
@@ -298,7 +296,7 @@ export function applyMove(s,move,trace=null) {
     ns.pending={phase:'chain',owner:move.owner,target:move.target,spent:[...(s.pending?.spent||[]),...spent],chainCount:(s.pending?.chainCount||0)+1};
     return ns;
   }
-  if(!ns.finished&&enemyErased&&!LIMIT_CARDS.includes(id)&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
+  if(!ns.finished&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
     ns.pending={phase:'bonus',bonusCount:(s.pending?.bonusCount||0)+1,spent:[...(s.pending?.spent||[]),...spent]};
     return ns;
   }
