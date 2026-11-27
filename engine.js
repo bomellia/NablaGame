@@ -1,4 +1,4 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.36';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.37';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
   hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.36';
@@ -82,7 +82,7 @@ export function normalizeGame(game){
   // Add the two new cards once to an existing saved deck, without resetting play.
   if(!state.compositionDeck){
     const count=[...state.deck,...state.hands.flat(),...(state.pending?.spent||[])].filter(id=>id==='COMPOSE').length;
-    for(let i=count;i<2;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,'COMPOSE');
+    for(let i=count;i<CARD_MAP.COMPOSE.count;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,'COMPOSE');
     state.compositionDeck=true;
   }
   // Preserve ongoing matches and insert only the new expansion inventory once.
@@ -96,7 +96,8 @@ export function normalizeGame(game){
     }
     state.strategyDeck=true;
   }
-  if(!state.rules34){
+  if(!state.rules34||!state.rules37){
+    const legacyLimitBonus=state.pending?.phase==='bonus'&&LIMIT_CARDS.includes(state.pending.spent?.at(-1));
     const convert=id=>id==='SHIFT'?'SCALE':id;
     state.deck=state.deck.map(convert).filter(id=>CARD_MAP[id]);
     state.hands=state.hands.map(h=>h.map(convert));
@@ -115,7 +116,8 @@ export function normalizeGame(game){
       state.boards=state.boards.map(b=>b.slice(0,MAX_DIMENSION));
       state.log.unshift('次元上限変更により5個目以降の基底を除外しました。');
     }
-    state.rules34=true;
+    if(legacyLimitBonus&&state.pending?.phase==='bonus')endTurn(state,state.turn);
+    state.rules34=true;state.rules37=true;
   }
   if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
   state.version=14;
@@ -127,7 +129,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const boards=initialBoards(random);
   return {version:14,boards,hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,rules34:true,extended,difficulty,
+    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,rules34:true,rules37:true,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -206,7 +208,7 @@ function opSingle(id,basis,move,partner) {
 // Preview modifies only the cloned state's deterministic PRNG.
 function nextRandom(state){state.rng=(Math.imul(state.rng>>>0,1664525)+1013904223)>>>0;return state.rng/4294967296;}
 // Weighted draws without replacement; preserve the physical card inventory.
-export function limitWeight(opponentDimension){return 1+Math.min(.75,Math.max(0,opponentDimension-3)*.15);}
+export function limitWeight(opponentDimension){return 1;}
 function drawWeighted(state,actor){
  const deck=state.deck,w=limitWeight(state.boards[1-actor].length);
  if(w===1)return deck.pop();
@@ -285,7 +287,7 @@ export function applyMove(s,move,trace=null) {
   if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
-  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
+  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}${erased&&move.owner===1-actor&&LIMIT_CARDS.includes(id)?'（極限消去・ターン終了）':''}`);
   ns.log=ns.log.slice(0,16);
   const spent=consume(ns,actor,used);
   finish(ns);
@@ -296,7 +298,7 @@ export function applyMove(s,move,trace=null) {
     ns.pending={phase:'chain',owner:move.owner,target:move.target,spent:[...(s.pending?.spent||[]),...spent],chainCount:(s.pending?.chainCount||0)+1};
     return ns;
   }
-  if(!ns.finished&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
+  if(!ns.finished&&enemyErased&&!LIMIT_CARDS.includes(id)&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
     ns.pending={phase:'bonus',bonusCount:(s.pending?.bonusCount||0)+1,spent:[...(s.pending?.spent||[]),...spent]};
     return ns;
   }
@@ -358,7 +360,35 @@ function valueOf(e) {
   if(text.length>28)score-=.1;
   return score;
 }
-function scoreMove(state,move,after,difficulty) {
+function makeThreatEvaluator(){
+ const cache=new Map(), tests=[...LIMIT_CARDS.map(id=>[id,id==='LIM_ZERO'?{side:'two'}:{}]),['LIM_ZERO',{side:'plus'}],['LIM_ZERO',{side:'minus'}],['DIFF',{}],['INT_ALL',{interval:'symmetricX'}]];
+ return e=>{
+  const key=JSON.stringify(e);if(cache.has(key))return cache.get(key);
+  if(cache.size>=100||expressionSize(e)>80)return {zero:0,constant:0,derivative:false};
+  let zero=0,constant=0,diff=false;const counted=new Set();
+  for(const [id,opt] of tests){
+   if(counted.has(id))continue;
+   try{
+    const v=simplify(opSingle(id,e,opt,null));
+    if(v.t==='n'||v.t==='complex'&&v.re.t==='n'&&v.im.t==='n'){
+     const z=v.t==='n'?v.v===0:v.re.v===0&&v.im.v===0;
+     const w=CARD_MAP[id].count;
+     if(z){zero+=w;if(id==='DIFF')diff=true;}else constant+=w;
+     counted.add(id);
+    }
+   }catch{}
+  }
+  const result={zero,constant,derivative:diff};cache.set(key,result);return result;
+ };
+}
+function boardRisk(board,threat){
+ const constants=board.some(e=>e.t==='n'||e.t==='complex'&&e.re.t==='n'&&e.im.t==='n');
+ return board.reduce((sum,e)=>{
+  const t=threat(e),isConstant=e.t==='n'||e.t==='complex'&&e.re.t==='n'&&e.im.t==='n';
+  return sum+Math.min(1.8,t.zero*.085+t.constant*(constants&&!isConstant?.075:.025)+(t.derivative?.18:0));
+ },0)*(board.length===1?2:board.length===2?1.25:1);
+}
+function scoreMove(state,move,after,difficulty,threat) {
   const a=state.turn, enemy=1-a;
   if(after.finished){if(after.winner===a)return 10000;if(after.winner===enemy)return -10000;}
   const ownDelta=after.boards[a].length-state.boards[a].length;
@@ -367,7 +397,10 @@ function scoreMove(state,move,after,difficulty) {
   const oppValue=after.boards[enemy].reduce((acc,e)=>acc+valueOf(e),0);
   const used=Number.isInteger(move.partnerIndex)&&move.partnerIndex>=0?2:1;
   const unchanged=JSON.stringify(state.boards)===JSON.stringify(after.boards);
-  const raw=otherDelta*14+ownDelta*12+0.9*(ownValue-oppValue)-used*0.3-(unchanged?3:0);
+  const defense=state.boards[a].length===1?23:state.boards[a].length===2?16:12;
+  const risk=threat?boardRisk(after.boards[enemy],threat)-boardRisk(after.boards[a],threat):0;
+  const bonus=after.turn===a&&after.pending?.phase==='bonus'?2.2:0;
+  const raw=otherDelta*14+ownDelta*defense+0.9*(ownValue-oppValue)+risk*2.1+bonus-used*.45-(unchanged?5:0);
   if(difficulty==='easy') return raw*.3+Math.random()*15;
   if(difficulty==='hard') return raw+Math.random()*1.3;
   return raw+Math.random()*5;
@@ -378,9 +411,12 @@ export function chooseComMove(s) {
   const moves=legalMoves(s,{limit:1000,perCardOwner:10,includeState:true});
   if(!moves.length)return null;
   if(moves[0].pass)return {pass:true};
+  const threat=makeThreatEvaluator();
   let best=moves[0],bestScore=-Infinity;
+  const cardScores=new Map();
   for(const move of moves){
-    const score=move.discard?(-1000+Math.random()):scoreMove(s,move,move.nextState,s.difficulty);
+    const score=move.discard?(-1000+Math.random()):scoreMove(s,move,move.nextState,s.difficulty,threat);
+    cardScores.set(move.cardIndex,Math.max(cardScores.get(move.cardIndex)??-Infinity,score));
     if(score>bestScore){bestScore=score;best=move;}
   }
   const usefulAttack=moves.some(m=>!m.discard&&m.scoreDelta?.[1-s.turn]<0);
@@ -388,7 +424,7 @@ export function chooseComMove(s) {
     // The free follow-up is optional. Spend cards only for immediate gains
     // or for a winning action; otherwise keep them for the next turn.
     if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0)&&s.pending.phase!=='chain')return {pass:true};
-    if(usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard')>scoreMove(s,a,a.nextState,'hard')?b:a);}
+    if(usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard',threat)>scoreMove(s,a,a.nextState,'hard',threat)?b:a);}
     if(usefulAttack||s.pending.phase!=='chain'){const {nextState,scoreDelta,...chosen}=best;return chosen;}
   }
   // Bounded two-step lookahead. No replacement cards are drawn between steps,
@@ -398,14 +434,15 @@ export function chooseComMove(s) {
       m.scoreDelta?.[1-s.turn]===0&&m.scoreDelta?.[s.turn]===0&&m.nextState&&!m.nextState.finished)
       .sort((a,b)=>Number(LIMIT_CARDS.includes(s.hands[s.turn][a.cardIndex]))-Number(LIMIT_CARDS.includes(s.hands[s.turn][b.cardIndex])));
     // Round-robin across first card indices to avoid starving later cards.
-    const shortlist=[],seen=new Map();
-    for(const m of candidates){const k=m.cardIndex,n=seen.get(k)||0;if(n>=3)continue;seen.set(k,n+1);shortlist.push(m);if(shortlist.length>=18)break;}
+    const shortlist=[],seen=new Set(),remaining=[];
+    for(const m of candidates){const k=m.cardIndex+':'+m.target;if(seen.has(k))remaining.push(m);else{seen.add(k);shortlist.push(m);}}
+    shortlist.push(...remaining);shortlist.length=Math.min(shortlist.length,18);
     for(const m of shortlist){
       const {nextState,scoreDelta,...first}=m;
       const p=preview(s,{...first,continue:true});if(!p.ok)continue;
       for(const second of legalMoves(p.state,{limit:48,perCardOwner:8,includeState:true})){
         if(second.pass||second.discard||!second.nextState||second.scoreDelta[1-s.turn]>=0)continue;
-        const score=scoreMove(s,first,second.nextState,s.difficulty)-.6;
+        const score=scoreMove(s,first,second.nextState,s.difficulty,threat)-1.1;
         if(score>bestScore){bestScore=score;best={...first,continue:true,scoreDelta:second.scoreDelta,nextState:second.nextState};}
       }
     }
@@ -417,9 +454,10 @@ export function chooseComMove(s) {
   const hand=s.hands[s.turn], functions=hand.filter(id=>cardPool(id)==='function').length;
   const useful=new Set(moves.filter(m=>!m.discard&&(m.scoreDelta[s.turn]>0||m.scoreDelta[1-s.turn]<0)).flatMap(m=>[m.cardIndex,m.partnerIndex].filter(Number.isInteger)));
   const legal=new Set(moves.filter(m=>!m.discard).map(m=>m.cardIndex));
+  const neutral=.9*(s.boards[s.turn].reduce((a,e)=>a+valueOf(e),0)-s.boards[1-s.turn].reduce((a,e)=>a+valueOf(e),0))+2.1*(boardRisk(s.boards[1-s.turn],threat)-boardRisk(s.boards[s.turn],threat));
   if(!useful.size){
-    const bad=hand.map((id,i)=>({i,id})).filter(({i,id})=>!legal.has(i)&&!(functions===1&&cardPool(id)==='function')).map(v=>v.i);
-    if(bad.length>=2||moves.every(m=>m.discard)) {
+    const bad=hand.map((id,i)=>({i,id})).filter(({i,id})=>(!legal.has(i)||(cardScores.get(i)??-Infinity)<neutral-1)&&!(functions===1&&cardPool(id)==='function')).map(v=>v.i);
+    if((bad.length>=2&&bestScore<neutral+2)||moves.every(m=>m.discard)) {
       const indices=bad.length?bad:hand.map((_,i)=>i);
       return {discard:true,cardIndex:indices[0],cardIndices:indices};
     }

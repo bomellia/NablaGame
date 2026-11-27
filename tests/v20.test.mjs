@@ -6,11 +6,11 @@ import {makeDeck} from '../cards.js';
 const X=x(),sin=fn('sin',X),go=(s,m)=>{const p=preview(s,m);assert.ok(p.ok,p.reason);return p.state;};
 const inv=s=>[...s.deck,...s.hands.flat(),...(s.pending?.spent||[])].sort();
 test('repeat bonus without replenishment until end',()=>{
- const s=newGame();s.boards[1]=[n(1),X,pow(X,2),sin];s.hands[0]=['DIFF','LIM_PLUS','LIM_PLUS','LIM_ZERO','X','ONE','MUL','EXP_OP'];
+ const s=newGame();s.boards[1]=[n(1),X,pow(X,3),sin];s.hands[0]=['DIFF','INT_ALL','INT_ALL','INT_ALL','X','ONE','MUL','EXP_OP'];
  let a=go(s,{cardIndex:0,owner:1,target:0});assert.equal(a.pending.bonusCount,1);
- a=go(a,{cardIndex:0,owner:1,target:0});assert.equal(a.pending.bonusCount,2);
- a=go(a,{cardIndex:0,owner:1,target:0});assert.equal(a.pending.bonusCount,3);assert.deepEqual(a.deck,s.deck);assert.deepEqual(inv(a),inv(s));assert.equal(a.hands[0].length,5);
- a=go(a,{cardIndex:0,owner:1,target:0,side:'two'});assert.equal(a.winner,0);assert.equal(a.pending,null);assert.equal(a.hands[0].length,8);assert.deepEqual(inv(a),inv(s));
+ a=go(a,{cardIndex:0,owner:1,target:0,interval:'symmetricX'});assert.equal(a.pending.bonusCount,2);
+ a=go(a,{cardIndex:0,owner:1,target:0,interval:'symmetricX'});assert.equal(a.pending.bonusCount,3);assert.deepEqual(a.deck,s.deck);assert.deepEqual(inv(a),inv(s));assert.equal(a.hands[0].length,5);
+ a=go(a,{cardIndex:0,owner:1,target:0,interval:'symmetricX'});assert.equal(a.winner,0);assert.equal(a.pending,null);assert.equal(a.hands[0].length,8);assert.deepEqual(inv(a),inv(s));
 });
 test('bonus ends when next operation does not remove a basis',()=>{const s=newGame();s.boards[1]=[n(1),X,sin];s.hands[0]=['DIFF','EXP_OP','DIFF','X','ONE','MUL','DIV','LOG'];const a=go(s,{cardIndex:0,owner:1,target:0});const b=go(a,{cardIndex:0,owner:1,target:0});assert.equal(b.turn,1);assert.equal(b.pending,null);assert.deepEqual(inv(b),inv(s));});
 test('composition both directions and undefined constant',()=>{
@@ -20,4 +20,4 @@ test('composition both directions and undefined constant',()=>{
  assert.equal(preview(s,{cardIndex:0,partnerIndex:1,owner:1,target:0}).ok,false);
  const moves=legalMoves(s).filter(m=>m.cardIndex===0&&m.partnerIndex===1&&m.owner===1&&m.target===0);assert.equal(moves.length,2);
 });
-test('new deck and idempotent legacy migration',()=>{const s=newGame();assert.equal(makeDeck().length,125);assert.equal(makeDeck(false).length,105);assert.equal(s.deck.length,109);delete s.compositionDeck;s.deck=s.deck.filter(id=>id!=='COMPOSE');s.hands=s.hands.map(h=>h.map(id=>id==='COMPOSE'?'X':id));const a=normalizeGame(s),b=normalizeGame(a);assert.equal(inv(a).filter(id=>id==='COMPOSE').length,2);assert.deepEqual(a,b);});
+test('new deck and idempotent legacy migration',()=>{const s=newGame();assert.equal(makeDeck().length,125);assert.equal(makeDeck(false).length,105);assert.equal(s.deck.length,109);delete s.compositionDeck;s.deck=s.deck.filter(id=>id!=='COMPOSE');s.hands=s.hands.map(h=>h.map(id=>id==='COMPOSE'?'X':id));const a=normalizeGame(s),b=normalizeGame(a);assert.equal(inv(a).filter(id=>id==='COMPOSE').length,3);assert.deepEqual(a,b);});
