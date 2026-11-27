@@ -181,3 +181,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .bases{display:grid;grid-template-columns:repeat(var(--basis-count,1),minmax(0,1fr));justify-items:center;align-items:center;overflow:hidden;gap:3px}
 .bases .basis{width:100%;max-width:152px;min-width:0;height:100%;max-height:174px;min-height:0}
 @media(max-width:700px){.field-head{flex:0 0 30px}.bases{gap:1px}.bases .basis{max-width:120px;max-height:100%;padding-inline:1px}.dimension span{font-size:6px;letter-spacing:0}.field-pick{max-width:30px;font-size:7px}.basis-equation{font-size:13px}}
+
+/* v0.40: Keep the specific operation failure readable on compact screens. */
+.preview.invalid{flex:none;display:flex;flex-direction:column;gap:2px;min-width:0;color:#e4b29b;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.error-kind{font:10px var(--rune);letter-spacing:.05em}
+.error-detail{font:12px/1.4 system-ui,sans-serif;letter-spacing:normal;word-break:normal;overflow-wrap:anywhere}
+@media(max-width:700px){.error-kind{font-size:9px}.error-detail{font-size:11px}}

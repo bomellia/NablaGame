@@ -66,7 +66,7 @@ function ritualResult(state,move,result){
 }
 function deltaText(result){return 'P '+(result.delta[0]>0?'+':'')+result.delta[0]+' / C '+(result.delta[1]>0?'+':'')+result.delta[1];}
 function actionButton(id,icon,label,primary=false,disabled=false){return '<button id="'+id+'" class="'+(primary?'act-button':'hint-button')+'" type="button" aria-label="'+label+'" '+(disabled?'disabled':'')+'><span class="button-icon">'+icon+'</span><span class="button-rune">'+rune(label)+'</span></button>';}
-function errorRune(s){return rune(/極限|収束|発散/.test(s)?'LIMIT':/積分/.test(s)?'INTEGRAL':/同じ|対象/.test(s)?'TARGET':/定義|分母|ゼロ/.test(s)?'DOMAIN':/合法手/.test(s)?'NO RITE':'INVALID');}
+function errorRune(s){return rune(/積分/.test(s)?'INTEGRAL':/極限|収束|発散/.test(s)?'LIMIT':/同じ|対象/.test(s)?'TARGET':/定義|分母|ゼロ/.test(s)?'DOMAIN':/合法手/.test(s)?'NO RITE':'INVALID');}
 function actionMarkup(){
  if(game.finished)return '<div class="result">'+rune(game.winner===-1?'DRAW':game.winner===0?'VICTORY':'DEFEAT')+'</div><div class="action-buttons">'+actionButton('restart-btn','↻','RENEW',true)+'</div>';
  if(thinking||game.turn===1){const scene=comScene;return '<div class="flow-steps">'+[1,2,3].map(i=>'<span class="'+(scene?.stage>=i?'done':'')+'">'+i+' '+['','◇','◎','✧'][i]+'</span>').join('')+'</div><div class="flow-body"><div class="action-title">'+rune(scene?['','DRAW','MARK','CAST'][scene.stage]:'THINK')+'</div>'+(scene?.stage===3?ritualResult(scene.state,scene.move,scene.result):'')+'</div><div class="action-buttons">'+actionButton('skip-com','»','SKIP',false,!scene)+'</div>';}
@@ -74,10 +74,12 @@ function actionMarkup(){
  const c=currentCard(),move=currentMove(),result=resultFor(move),confirming=!!move;
  const canChain=confirming&&!isFieldCard(c)&&result?.ok&&preview(game,{...move,continue:true}).ok;
  const phase=game.pending?.phase==='chain'?rune('CHAIN')+' '+((game.pending.chainCount||1)+1):game.pending?.phase==='bonus'?rune('BREAK')+' '+(game.pending.bonusCount||1):'';
- const actionLabel=result?.state.finished?'FINISH':result?.state.pending?.phase==='bonus'?'BREAK':'CAST';
+ const actionLabel=result?.state?.finished?'FINISH':result?.state?.pending?.phase==='bonus'?'BREAK':'CAST';
+ const status=result&&!result.ok?(result.reason||'演算を実行できません。'):message;
+ const statusHtml=status?'<div class="preview invalid" role="status" aria-live="polite"><span class="error-kind" aria-hidden="true">⊘ '+errorRune(status)+'</span><span class="error-detail" lang="ja">'+esc(status)+'</span></div>':'';
  const title=!c?'DRAW':move?'CAST':['binary','boardBinary'].includes(c.kind)?(selection.operands.length?'SECOND':'FIRST'):isFieldCard(c)?'FIELD':'MARK';
  const buttons=confirming?'<div class="action-buttons confirm-actions" data-count="'+(canChain?3:2)+'">'+actionButton('cancel-btn','↶','BACK')+(canChain?actionButton('chain-btn','⛓','CHAIN'):'')+actionButton('act-btn','✧',actionLabel,true,!result?.ok)+'</div>':'<div class="action-buttons">'+actionButton('hint-btn','✦','HINT')+(game.pending?actionButton('pass-btn','»','END'):actionButton('swap-btn','↻','SWAP',false,!game.deck.length))+(c?actionButton('cancel-btn','↶','BACK'):'')+'</div>';
- return '<div class="flow-steps"><span class="'+(c?'done':'current')+'">1 ◇</span><span class="'+(c&&!move?'current':move?'done':'')+'">2 ◎</span><span class="'+(move?'current':'')+'">3 ✧</span></div><div class="flow-body"><div class="action-title">'+(phase?phase+' · ':'')+rune(title)+'</div>'+(c?optionsHtml(c):'')+(move&&result?.ok?ritualResult(game,move,result):'')+(result&&!result.ok||message?'<div class="preview invalid" role="status" aria-label="Operation unavailable">⊘ '+errorRune(result?.reason||message)+'</div>':'')+'</div>'+buttons;
+ return '<div class="flow-steps"><span class="'+(c?'done':'current')+'">1 ◇</span><span class="'+(c&&!move?'current':move?'done':'')+'">2 ◎</span><span class="'+(move?'current':'')+'">3 ✧</span></div><div class="flow-body"><div class="action-title">'+(phase?phase+' · ':'')+rune(title)+'</div>'+(c?optionsHtml(c):'')+(move&&result?.ok?ritualResult(game,move,result):'') +statusHtml+'</div>'+buttons;
 }
 let fitFrame=null;
 function scheduleFit(){
