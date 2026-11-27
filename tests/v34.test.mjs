@@ -35,7 +35,7 @@ test('three-step chain conserves all spent cards and does not refill early',()=>
 test('dimension cap and retired cards',()=>{
  const s=newGame();s.boards[0]=[X,pow(X,2),pow(X,3),fn('sin',X)];s.hands[0][0]='ONE';
  assert.equal(preview(s,{cardIndex:0,owner:0}).ok,false);
- assert.ok(!legalMoves(s).some(m=>m.cardIndex===0&&m.owner===0));assert.equal(makeDeck().length,125);
+ assert.ok(!legalMoves(s).some(m=>m.cardIndex===0&&m.owner===0));assert.equal(makeDeck().length,129);
  for(const id of ['SHIFT','SINH_X','COSH_X'])assert.equal(CARD_MAP[id],undefined);
  assert.ok(preview(s,chooseComMove(s)).ok);
 });

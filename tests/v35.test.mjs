@@ -40,7 +40,7 @@ test('all selectable intervals are legal move options, validated and consume one
  assert.equal(preview(s,{cardIndex:0,owner:1,target:0,interval:'all'}).ok,false);
  assert.ok(preview(s,chooseComMove(s)).ok);
  assert.equal(integralIntervals('INT_HALF').length,5);assert.equal(integralIntervals('INT_ALL').length,2);
- assert.equal(makeDeck().length,125);assert.equal(makeDeck().filter(id=>id==='INT_HALF').length,2);
+ assert.equal(makeDeck().length,129);assert.equal(makeDeck().filter(id=>id==='INT_HALF').length,2);
 });
 
 test('finite constant intervals are retired in both engine and direct calculation',()=>{

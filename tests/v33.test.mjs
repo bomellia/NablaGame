@@ -18,7 +18,7 @@ test('asymmetric full-rank openings across deterministic seeds and fixed RNG',()
  for(const r of [0,.5,.999]){const s=newGame({random:()=>r});assert.notDeepEqual(s.boards[0],s.boards[1]);assert.deepEqual(inv(s),makeDeck().sort());}
 });
 test('new card inventory and one-time migration preserve existing hands and boards',()=>{
- assert.equal(makeDeck().length,125);assert.equal(makeDeck(false).length,105);
+ assert.equal(makeDeck().length,129);assert.equal(makeDeck(false).length,109);
  for(const extended of [true,false]){
   const s=newGame({extended});delete s.strategyDeck;
   // Use a valid pre-expansion inventory and old opening.

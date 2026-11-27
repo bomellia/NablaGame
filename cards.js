@@ -19,6 +19,8 @@ export const CARDS = [
   {id:'NABLA',label:'∇',kind:'global',count:8,description:'対象の場全体を1階微分'},
   {id:'DELTA',label:'Δ',kind:'global',count:2,description:'対象の場全体を2階微分'},
   {id:'DIFF',label:'d/dx',kind:'single',count:8,description:'指定した基底を微分'},
+  {id:'DIFF_PM',label:'D±1',kind:'diffSign',count:2,description:'D=d/dx。f′(x)±f(x)（符号を選択）'},
+  {id:'DIFF2_PLUS',label:'D²+1',kind:'single',count:2,description:'D=d/dx。f″(x)+f(x)'},
   {id:'INTEGRATE',label:'∫dx',kind:'constant',count:8,description:'積分。積分定数Cを選べる'},
   {id:'MUL',label:'×',kind:'binary',count:6,description:'関数カードを使用して乗算'},
   {id:'DIV',label:'÷',kind:'binary',count:5,description:'関数カードを使用して除算'},

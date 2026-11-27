@@ -19,7 +19,7 @@ test('balanced deck and v36 migration conserve counts and hand sizes',()=>{
  const s=newGame();delete s.rules37;const deck=makeDeck();for(const [id,replacement] of [['COMPOSE','LIM_PLUS'],['MUL','LIM_MINUS'],['INT_ALL','LIM_ZERO'],['CAUCHY','LIM_ZERO']])deck[deck.indexOf(id)]=replacement;
  s.hands=[deck.splice(0,8),deck.splice(0,8)];s.deck=deck;
  const a=normalizeGame(s);assert.deepEqual(a.boards,s.boards);assert.deepEqual(inv(a),makeDeck().sort());assert.deepEqual(a.hands.map(h=>h.length),[8,8]);assert.deepEqual(normalizeGame(a),a);
- assert.equal(makeDeck().filter(id=>LIMIT_CARDS.includes(id)).length,10);assert.equal(makeDeck().length,125);assert.equal(makeDeck(false).length,105);assert.equal(limitWeight(4),1);
+ assert.equal(makeDeck().filter(id=>LIMIT_CARDS.includes(id)).length,10);assert.equal(makeDeck().length,129);assert.equal(makeDeck(false).length,109);assert.equal(limitWeight(4),1);
 });
 test('COM prefers rescue at one dimension but takes a winning attack',()=>{
  const s=newGame({difficulty:'hard'});s.boards=[[n(1)],[X,pow(X,2),fn('cos',X)]];s.hands[0]=['X','LIM_PLUS','ONE','ZERO','INVERSE','SQUARE','RECIP','LOG'];

@@ -1,4 +1,4 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.37';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.39';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
   hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.36';
@@ -96,7 +96,7 @@ export function normalizeGame(game){
     }
     state.strategyDeck=true;
   }
-  if(!state.rules34||!state.rules37){
+  if(!state.rules34||!state.rules37||!state.rules39){
     const convert=id=>id==='SHIFT'?'SCALE':id;
     state.deck=state.deck.map(convert).filter(id=>CARD_MAP[id]);
     state.hands=state.hands.map(h=>h.map(convert));
@@ -115,7 +115,7 @@ export function normalizeGame(game){
       state.boards=state.boards.map(b=>b.slice(0,MAX_DIMENSION));
       state.log.unshift('次元上限変更により5個目以降の基底を除外しました。');
     }
-    state.rules34=true;state.rules37=true;
+    state.rules34=true;state.rules37=true;state.rules39=true;
   }
   if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
   state.version=14;
@@ -127,7 +127,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const boards=initialBoards(random);
   return {version:14,boards,hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,rules34:true,rules37:true,extended,difficulty,
+    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,rules34:true,rules37:true,rules39:true,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -151,6 +151,7 @@ export function validate(s,move) {
   if(card.kind==='function'&&s.boards[move.owner].length>=MAX_DIMENSION)throw new Unsupported('次元上限は4です');
   if(card.kind==='boardBinary'&&(!Number.isInteger(move.otherTarget)||move.otherTarget===move.target||move.otherTarget<0||move.otherTarget>=s.boards[move.owner].length))throw new Unsupported('同じ場の異なる2基底を選んでください');
   if(card.kind==='interval'&&!integralInterval(cardId,move.interval))throw new Unsupported('積分区間を指定してください');
+  if(card.kind==='diffSign'&&![1,-1].includes(move.diffSign))throw new Unsupported('D±1 の符号を選んでください');
   if(card.kind==='scale'&&!SCALES.includes(move.a))throw new Unsupported('倍率aを選んでください');
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
@@ -167,6 +168,8 @@ export function validate(s,move) {
 function opSingle(id,basis,move,partner) {
   switch(id){
     case 'DIFF':return safeDerivative(basis);
+    case 'DIFF_PM':return simplify(add(safeDerivative(basis),linearScale(basis,move.diffSign)));
+    case 'DIFF2_PLUS':return simplify(add(safeDerivative(safeDerivative(basis)),basis));
     case 'INTEGRATE':return safeIntegral(basis,move.C);
     case 'MUL':return mul(basis,partner);
     case 'ADD':return add(basis,partner);
@@ -285,7 +288,7 @@ export function applyMove(s,move,trace=null) {
   if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
-  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
+  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.kind==='diffSign'?(move.diffSign===1?'D+1':'D−1'):card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
   ns.log=ns.log.slice(0,16);
   const spent=consume(ns,actor,used);
   finish(ns);
@@ -330,6 +333,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         }
         if(card.kind==='boardBinary')choices=s.boards[owner].map((_,otherTarget)=>({otherTarget})).filter(z=>z.otherTarget!==target);
         if(card.kind==='scale')choices=SCALES.map(a=>({a}));
+        if(card.kind==='diffSign')choices=[-1,1].map(diffSign=>({diffSign}));
         if(card.kind==='interval')choices=integralIntervals(card.id).map(z=>({interval:z.id}));
         if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(['PLUS_C','SHIFT'].includes(card.id)&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
@@ -359,7 +363,7 @@ function valueOf(e) {
   return score;
 }
 function makeThreatEvaluator(){
- const cache=new Map(), tests=[...LIMIT_CARDS.map(id=>[id,id==='LIM_ZERO'?{side:'two'}:{}]),['LIM_ZERO',{side:'plus'}],['LIM_ZERO',{side:'minus'}],['DIFF',{}],['INT_ALL',{interval:'symmetricX'}]];
+ const cache=new Map(), tests=[...LIMIT_CARDS.map(id=>[id,id==='LIM_ZERO'?{side:'two'}:{}]),['LIM_ZERO',{side:'plus'}],['LIM_ZERO',{side:'minus'}],['DIFF',{}],['DIFF_PM',{diffSign:-1}],['DIFF_PM',{diffSign:1}],['DIFF2_PLUS',{}],['INT_ALL',{interval:'symmetricX'}]];
  return e=>{
   const key=JSON.stringify(e);if(cache.has(key))return cache.get(key);
   if(cache.size>=100||expressionSize(e)>80)return {zero:0,constant:0,derivative:false};
