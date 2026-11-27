@@ -1,7 +1,7 @@
 import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.44';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.36';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.46';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -214,6 +214,7 @@ function opSingle(id,basis,move,partner) {
       const result=id==='LIMSUP'||id==='LIMINF'?
         oscillatoryLimit(basis,id==='LIMSUP'?'sup':'inf'):
         limit(basis,id==='LIM_PLUS'?'plus':id==='LIM_MINUS'?'minus':'zero', move.side||'two');
+      if(result.reason==='realDomain')throw new Unsupported('上極限・下極限には無限遠で実数値を取ることの確認が必要です');
       if(result.type==='nonexistent')throw new Unsupported('この極限は振動・左右差などにより存在しません');
       if(result.type==='infinity')return constant(0);
       if(result.type==='finite')return constant(result.v);

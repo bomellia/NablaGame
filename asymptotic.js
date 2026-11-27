@@ -80,6 +80,24 @@ function lead(e,point,side,depth=0){
   if(u.s[3]!==0)return null;
   if(r===0){const v=Math.log(Math.abs(a.re));return name==='log'&&a.re<0?{c:v,z:cplx(v,Math.PI),s:scale0,exact:true}:v===0?null:make(v);}
  }
+ // Principal log/sqrt convention on the real axis:
+ // asin(z) = -i Log(iz + sqrt(1-z²)), acos(z) = pi/2 - asin(z).
+ // For unbounded real arguments, the logarithmic imaginary part dominates.
+ if(['asin','acos'].includes(name)&&realTail(e.arg,point,side,depth+1)){
+  if(r>0){
+   const k=u.s[0]!==0?0:u.s[1]!==0?1:u.s[2]!==0?2:-1;
+   if(k>=0){
+    const s=k===0?[0,0,2,0]:k===1?[0,0,1,0]:[0,0,0,1];
+    const im=(name==='acos'?1:-1)*Math.sign(a.re)*u.s[k];
+    return {c:0,z:cplx(0,im),s,exact:true};
+   }
+  }
+  if(r===0&&Math.abs(a.re)>1){
+   const im=Math.sign(a.re)*Math.acosh(Math.abs(a.re));
+   const re=name==='acos'?(a.re>0?0:Math.PI):Math.sign(a.re)*Math.PI/2;
+   return {c:re,z:cplx(re,name==='acos'?im:-im),s:scale0,exact:true};
+  }
+ }
  if(r<0){
   if(['sin','tan','sinh','tanh','asin','atan','asinh','atanh'].includes(name))return u;
   if(['cos','cosh'].includes(name))return make(1);
@@ -126,22 +144,54 @@ export function asymptoticLimit(e,point,side){
 // Exact range of a single oscillating phase or a monotone composition.
 // Do not combine independent ranges of multiple correlated functions.
 // Sufficient, not necessary, test of reality and eventual continuity.
+// Certified real-valued tail (isolated real poles are allowed). A limit
+// of zero alone is not evidence that the function is real on the tail.
 function realTail(e,point,side,depth=0){
  if(!e||depth>100)return false;
  const rec=v=>realTail(v,point,side,depth+1);
  if(e.t==='n'||e.t==='x')return true;
  if(e.t==='a'||e.t==='m')return e.v.every(rec);
+ // A bounded interval or a strict leading sign can certify a branch.
+ const bounds=v=>point==='plus'?periodicRange(v,w=>asymptoticLimit(w,'plus','two')):null;
+ const above=(v,k,inclusive=false)=>{
+  const q=lead(v,point,side,depth+1);
+  if(q?.exact&&!q.z?.im){
+   const r=cmp(q.s,scale0);
+   if(r>0)return q.c>0;
+   const z=r<0?0:q.c;
+   if(z>k)return true;
+   if(z<k)return false;
+   if(k===0&&q.c>0)return true;
+   if(k===0&&q.c<0)return false;
+  }
+  const range=bounds(v);return !!range&&(inclusive?range[0]>=k:range[0]>k);
+ };
+ const between=(v,k,inclusive=false)=>{
+  const q=lead(v,point,side,depth+1);
+  if(q?.exact&&!q.z?.im){
+   const r=cmp(q.s,scale0);
+   if(r>0)return false;
+   if(r<0||Math.abs(q.c)<k)return true;
+   if(Math.abs(q.c)>k)return false;
+  }
+  const range=bounds(v);return !!range&&(inclusive?range[0]>=-k&&range[1]<=k:range[0]>-k&&range[1]<k);
+ };
  if(e.t==='p'){
   if(!rec(e.b))return false;
   if(Number.isInteger(e.e))return true;
-  const q=lead(e.b,point,side,depth+1);
-  return !!q&&q.exact&&!(q.z?.im)&&q.c>0;
+  return above(e.b,0,e.e>0);
  }
  if(e.t!=='f'||!rec(e.arg))return false;
- if(['sin','cos','tan','cot','sec','csc','abs','sign','exp','sinh','cosh','tanh','erf','erfi','atan','asinh','logabs'].includes(e.f))return true;
- if(['sqrt','log'].includes(e.f)){const q=lead(e.arg,point,side,depth+1);return !!q&&q.exact&&!(q.z?.im)&&q.c>0;}
+ if(['sin','cos','tan','cot','sec','csc','abs','sign','exp','sinh','cosh','tanh','erf','erfi','atan','asinh','logabs','Si','Shi','FresnelS','FresnelC','erfiinv','Ei'].includes(e.f))return true;
+ if(e.f==='sqrt')return above(e.arg,0,true);
+ if(e.f==='log'||['Ci','Chi','Li'].includes(e.f))return above(e.arg,0);
+ if(['asin','acos'].includes(e.f))return between(e.arg,1,true);
+ if(['atanh','erfinv'].includes(e.f))return between(e.arg,1);
+ if(e.f==='acosh')return above(e.arg,1,true);
+ if(e.f==='LambertW')return above(e.arg,-1/Math.E,true);
  return false;
 }
+export function hasRealTail(e,point='plus',side='two'){return realTail(e,point,side);}
 function continuousTail(e,depth=0){
  if(!e||depth>100)return false;
  if(!realTail(e,'plus','two',depth))return false;
@@ -198,6 +248,8 @@ export function periodicRange(e,realLimit){
   if(e.f==='sqrt'&&a>=0)return [Math.sqrt(a),Math.sqrt(b)];
   if(e.f==='abs')return [a<=0&&b>=0?0:Math.min(Math.abs(a),Math.abs(b)),Math.max(Math.abs(a),Math.abs(b))];
   if(e.f==='atan')return r.map(Math.atan);
+  if(e.f==='asin'&&a>=-1&&b<=1)return r.map(Math.asin);
+  if(e.f==='acos'&&a>=-1&&b<=1)return [Math.acos(b),Math.acos(a)];
   if(e.f==='sign'&&a<0&&b>0)return [-1,1];
   if(e.f==='sign'&&a>0)return [1,1];
   if(e.f==='sign'&&b<0)return [-1,-1];

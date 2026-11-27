@@ -2,7 +2,7 @@
    Real symbolic core is intentionally retained; unsupported complex branches
    and transform/integral forms are refused rather than guessed. */
 import * as R from './symbolic-extended.js?v=0.18';
-import {asymptoticLimit,periodicRange,trigExtrema,trigSumPoleSigns,trigLocalLimit} from './asymptotic.js?v=0.22';
+import {asymptoticLimit,periodicRange,trigExtrema,trigSumPoleSigns,trigLocalLimit,hasRealTail} from './asymptotic.js?v=0.46';
 export * from './symbolic-extended.js?v=0.18';
 const n=R.constant,X=R.x,Z=()=>n(0),O=()=>n(1);
 const fail=msg=>{throw new R.Unsupported(msg);};
@@ -160,6 +160,7 @@ export function limit(e,point='plus',side='two'){
 }
 export function oscillatoryLimit(e,kind='sup'){
  e=realRepresentative(simplify(e));
+ if(isC(e)||!hasRealTail(e))return {type:'unknown',reason:'realDomain'};
  if(!isC(e)){
   const bounds=trigExtrema(e,R.limit);
   if(bounds){const v=bounds[kind==='sup'?1:0];return Number.isFinite(v)?{type:'finite',v}:{type:'infinity',sign:Math.sign(v)};}
@@ -171,13 +172,13 @@ export function oscillatoryLimit(e,kind='sup'){
   }
   const q=asymptoticLimit(e,'plus','two');
   if(q.type==='complexInfinity')return {type:'unknown'};
-  if(q.type==='complex')return {type:'symbolic',expr:complex(n(q.re),n(q.im))};
+  if(q.type==='complex')return {type:'unknown',reason:'realDomain'};
   if(q.type==='finite'||q.type==='infinity')return q;
   const r=periodicRange(e,realTreeLimit);
   if(r&&r.every(Number.isFinite))return {type:'finite',v:r[kind==='sup'?1:0]};
   return R.oscillatoryLimit(e,kind);
  }
- const q=limit(e,'plus');return q.type==='symbolic'||q.type==='finite'?q:{type:'unknown'};
+ return {type:'unknown',reason:'realDomain'};
 }
 // Complex rank by realification: each complex vector contributes v and i*v.
 function terms(e,out=new Map(),c=1){

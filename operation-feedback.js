@@ -1,5 +1,6 @@
 // Presentation-only translation. Never alter the engine's original reason or save data.
 const messages=new Map([
+ ['上極限・下極限には無限遠で実数値を取ることの確認が必要です','Upper and lower limits require a verified real-valued tail.'],
  [
   "微分結果を確定できません",
   "Derivative cannot be determined."
