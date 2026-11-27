@@ -176,3 +176,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .seal-graph.graph-imag{stroke:#c89aaf;stroke-width:1.3}
 .seal-draw .seal-graph{filter:drop-shadow(0 0 2px #e8cf9c)}
 .seal-erase .seal-graph{filter:drop-shadow(0 0 1.5px #d8c19a)}
+
+/* v0.34 — Up to four seals always fit the field width. */
+.bases{display:grid;grid-template-columns:repeat(var(--basis-count,1),minmax(0,1fr));justify-items:center;align-items:center;overflow:hidden;gap:3px}
+.bases .basis{width:100%;max-width:152px;min-width:0;height:100%;max-height:174px;min-height:0}
+@media(max-width:700px){.field-head{flex:0 0 30px}.bases{gap:1px}.bases .basis{max-width:120px;max-height:100%;padding-inline:1px}.dimension span{font-size:6px;letter-spacing:0}.field-pick{max-width:30px;font-size:7px}.basis-equation{font-size:13px}}

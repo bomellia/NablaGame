@@ -18,7 +18,7 @@ test('asymmetric full-rank openings across deterministic seeds and fixed RNG',()
  for(const r of [0,.5,.999]){const s=newGame({random:()=>r});assert.notDeepEqual(s.boards[0],s.boards[1]);assert.deepEqual(inv(s),makeDeck().sort());}
 });
 test('new card inventory and one-time migration preserve existing hands and boards',()=>{
- assert.equal(makeDeck().length,127);assert.equal(makeDeck(false).length,105);
+ assert.equal(makeDeck().length,125);assert.equal(makeDeck(false).length,105);
  for(const extended of [true,false]){
   const s=newGame({extended});delete s.strategyDeck;
   // Use a valid pre-expansion inventory and old opening.
@@ -28,23 +28,8 @@ test('new card inventory and one-time migration preserve existing hands and boar
   assert.deepEqual(inv(n),makeDeck(extended).sort());assert.deepEqual(normalizeGame(n),n);
  }
 });
-test('addition, subtraction, shift and reciprocal use ordinary rules',()=>{
- const X=x(),s=newGame();s.boards[1]=[fromCard('X2'),fromCard('SIN'),fromCard('EXP')];
- s.hands[0]=['ADD','SUB','SHIFT','RECIP','X','X2','DIFF','SIN'];
- const moves=[
-  [{cardIndex:0,partnerIndex:4,owner:1,target:0,direction:'basisOverCard'},add(pow(X,2),X)],
-  [{cardIndex:1,partnerIndex:4,owner:1,target:0,direction:'basisOverCard'},add(pow(X,2),mul(constant(-1),X))],
-  [{cardIndex:1,partnerIndex:4,owner:1,target:0,direction:'cardOverBasis'},add(X,mul(constant(-1),pow(X,2)))],
-  [{cardIndex:2,C:1,owner:1,target:0},pow(add(X,constant(1)),2)],
-  [{cardIndex:3,owner:1,target:0},pow(X,-2)]
- ];
- for(const [move,expected] of moves){const r=preview(s,move);assert.ok(r.ok,r.reason);eq(r.effect.result[0],expected);assert.deepEqual(inv(r.state),inv(s));}
- assert.equal(preview(s,{cardIndex:2,C:0,owner:1,target:0}).ok,false);
- const zero=preview(s,{cardIndex:1,partnerIndex:5,owner:1,target:0,direction:'basisOverCard'});assert.ok(zero.ok,zero.reason);assert.equal(zero.delta[1],-1);assert.equal(zero.state.pending.phase,'bonus');
- const candidates=legalMoves(s);for(const [move] of moves)assert.ok(candidates.some(m=>Object.entries(move).every(([k,v])=>m[k]===v)));
- assert.ok(preview(s,chooseComMove(s)).ok);
-});
-test('all added function cards have concrete ASTs and labels',()=>{
- for(const id of ['X3','ABS_X','SINH_X','COSH_X']){assert.ok(fromCard(id));assert.notEqual(cardLatex(id),'\\text{?}');}
- for(const id of ['ADD','SUB','SHIFT','RECIP'])assert.notEqual(cardLatex(id),'\\text{?}');
+test('retained expansion functions and reciprocal',()=>{
+ const s=newGame();s.boards[1]=[fromCard('X2'),fromCard('SIN'),fromCard('EXP')];s.hands[0][0]='RECIP';
+ const r=preview(s,{cardIndex:0,owner:1,target:0});assert.ok(r.ok,r.reason);eq(r.effect.result[0],pow(x(),-2));assert.deepEqual(inv(r.state),inv(s));
+ for(const id of ['X3','ABS_X','ADD','SUB','SCALE','RECIP'])assert.notEqual(cardLatex(id),'\\text{?}');
 });

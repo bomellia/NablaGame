@@ -39,11 +39,9 @@ export const CARDS = [
   // Tactical expansion (v0.33): new functions and noncommutative arithmetic.
   {id:'X3',label:'x³',kind:'function',count:2,expansion:true,strategy:true,description:'三次関数を追加・演算材料に使用'},
   {id:'ABS_X',label:'|x|',kind:'function',count:2,expansion:true,strategy:true,description:'絶対値関数を追加・演算材料に使用'},
-  {id:'SINH_X',label:'sinh x',kind:'function',count:1,expansion:true,strategy:true,description:'双曲線正弦関数'},
-  {id:'COSH_X',label:'cosh x',kind:'function',count:1,expansion:true,strategy:true,description:'双曲線余弦関数'},
-  {id:'ADD',label:'+',kind:'binary',count:2,expansion:true,strategy:true,description:'場の基底と関数カードを加算'},
-  {id:'SUB',label:'−',kind:'binary',count:2,expansion:true,strategy:true,description:'場の基底と関数カードを減算（選択順）'},
-  {id:'SHIFT',label:'x↦x+C',kind:'constant',count:2,expansion:true,strategy:true,description:'f(x)をf(x+C)へ変換（C≠0）'},
+  {id:'ADD',label:'+',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'同じ場の2基底を選び、最初の基底を f+g に置換'},
+  {id:'SUB',label:'−',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'同じ場の2基底を選び、最初の基底を f−g に置換'},
+  {id:'SCALE',label:'x↦ax',kind:'scale',count:2,expansion:true,strategy:true,description:'f(x)をf(ax)へ変換（a=1/2, 2, i）'},
   {id:'RECIP',label:'1/f',kind:'single',count:2,expansion:true,strategy:true,description:'指定した基底の逆数（逆関数ではない）'},
   // Prototype expansion cards (opt-in deck option)
   {id:'PLUS_C',label:'+C',kind:'constant',count:5,expansion:true,description:'指定した基底に定数Cを加える（独自カード）'},
@@ -55,6 +53,8 @@ export const FUNCTION_CARDS = CARDS.filter(c=>c.kind==='function').map(c=>c.id);
 export const makeDeck = (extended=true) => CARDS.flatMap(c=>!extended&&c.expansion?[]:Array(c.count).fill(c.id));
 
 export const HAND_SIZE=8;
+export const MAX_DIMENSION=4;
+export const SCALES=[0.5,2,'i'];
 export const cardPool=id=>CARD_MAP[id]?.kind==='function'?'function':'operator';
 
 export const LIMIT_CARDS=['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'];

@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,cardPool,LIMIT_CARDS} from './cards.js?v=0.33';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS} from './cards.js?v=0.34';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose} from './game-math.js?v=0.33';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.34';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -96,6 +96,27 @@ export function normalizeGame(game){
     }
     state.strategyDeck=true;
   }
+  if(!state.rules34){
+    const convert=id=>id==='SHIFT'?'SCALE':id;
+    state.deck=state.deck.map(convert).filter(id=>CARD_MAP[id]);
+    state.hands=state.hands.map(h=>h.map(convert));
+    if(state.pending)state.pending.spent=(state.pending.spent||[]).map(convert);
+    const counts=new Map();for(const id of makeDeck(state.extended!==false))counts.set(id,(counts.get(id)||0)+1);
+    const used=new Map(),keep=id=>{const k=used.get(id)||0;if(k>=(counts.get(id)||0))return false;used.set(id,k+1);return true;};
+    const pending=state.pending,slots=[];
+    state.hands=state.hands.map((h,p)=>h.map((id,i)=>{if(keep(id))return id;slots.push([p,i]);return null;}));
+    if(pending)pending.spent=pending.spent.map(id=>keep(id)?id:null);
+    state.deck=state.deck.filter(keep);
+    for(const [id,count] of counts)for(let i=used.get(id)||0;i<count;i++)state.deck.splice(Math.floor(nextRandom(state)*(state.deck.length+1)),0,id);
+    for(const [p,i] of slots)state.hands[p][i]=state.deck.pop();
+    if(pending)pending.spent=pending.spent.map(id=>id||state.deck.pop());
+    if(state.boards.some(b=>b.length>MAX_DIMENSION)){
+      if(state.pending)endTurn(state,state.turn);
+      state.boards=state.boards.map(b=>b.slice(0,MAX_DIMENSION));
+      state.log.unshift('次元上限変更により5個目以降の基底を除外しました。');
+    }
+    state.rules34=true;
+  }
   if(state.pending?.phase==='bonus'&&!state.pending.bonusCount)state.pending.bonusCount=1;
   state.version=14;
   return state;
@@ -106,7 +127,7 @@ export function newGame({extended=true,difficulty='normal',startingPlayer=0,rand
   for(let i=0;i<HAND_SIZE;i++)for(let p=0;p<2;p++)hands[p].push(deck.pop());
   const boards=initialBoards(random);
   return {version:14,boards,hands,deck,rng:Math.floor(random()*4294967296)>>>0,turn:startingPlayer,
-    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,extended,difficulty,
+    turns:0,finished:false,winner:null,pending:null,compositionDeck:true,strategyDeck:true,rules34:true,extended,difficulty,
     log:['対戦を開始しました。基底を0次元にすると勝利です。']};
 }
 function opTargetRequired(kind) {return kind!=='function';}
@@ -120,13 +141,16 @@ export function validate(s,move) {
     if(card.kind==='function')throw new Unsupported('連続演算・追加行動では基底を追加できません');
     if(s.pending.phase==='chain'&&(card.kind==='global'||move.owner!==s.pending.owner||move.target!==s.pending.target))
       throw new Unsupported('2つ目の演算は同じ基底に適用してください');
-    if(move.continue)throw new Unsupported('連続演算は最大2演算です');
+    // Hand size is the resource limit; no fixed chain length.
   }
   if(move.continue&&['function','global'].includes(card.kind))throw new Unsupported('個別演算のみ連続使用できます');
   if(move.owner!==0&&move.owner!==1)throw new Unsupported('対象のプレイヤーが不正です');
   if(opTargetRequired(card.kind) && !(card.kind==='global')) {
     if(!Number.isInteger(move.target)||move.target<0||move.target>=s.boards[move.owner].length)throw new Unsupported('対象の基底を選んでください');
   }
+  if(card.kind==='function'&&s.boards[move.owner].length>=MAX_DIMENSION)throw new Unsupported('次元上限は4です');
+  if(card.kind==='boardBinary'&&(!Number.isInteger(move.otherTarget)||move.otherTarget===move.target||move.otherTarget<0||move.otherTarget>=s.boards[move.owner].length))throw new Unsupported('同じ場の異なる2基底を選んでください');
+  if(card.kind==='scale'&&!SCALES.includes(move.a))throw new Unsupported('倍率aを選んでください');
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
     if(move.partnerIndex===move.cardIndex || !Number.isInteger(move.partnerIndex) || !FUNCTION_CARDS.includes(s.hands[actor][move.partnerIndex]))throw new Unsupported('別の関数カードが必要です');
@@ -145,8 +169,8 @@ function opSingle(id,basis,move,partner) {
     case 'INTEGRATE':return safeIntegral(basis,move.C);
     case 'MUL':return mul(basis,partner);
     case 'ADD':return add(basis,partner);
-    case 'SUB':return move.direction==='cardOverBasis'?add(partner,mul(constant(-1),basis)):add(basis,mul(constant(-1),partner));
-    case 'SHIFT':return compose(basis,add(x(),constant(move.C)));
+    case 'SUB':return add(basis,linearScale(partner,-1));
+    case 'SCALE':return compose(basis,move.a==='i'?complex(constant(0),x()):mul(constant(move.a),x()));
     case 'RECIP':{
       if(basis.t==='n'&&basis.v===0)throw new Unsupported('0の逆数は定義されません');
       return div(constant(1),basis);
@@ -244,13 +268,13 @@ export function applyMove(s,move,trace=null) {
   } else {
     const logText=e=>{const t=display(e);return t.length>180?t.slice(0,177)+'…':t;};
     const before=logText(own[move.target]);
-    const partner=card.kind==='binary'?fromCard(s.hands[actor][move.partnerIndex]):null;
+    const partner=card.kind==='binary'?fromCard(s.hands[actor][move.partnerIndex]):card.kind==='boardBinary'?own[move.otherTarget]:null;
     let after=simplify(opSingle(id,own[move.target],move,partner));
     if(!after)throw new Unsupported('演算結果を確定できません');
     own[move.target]=after;
     if(trace)trace.result=[after];
     info=`${before} → ${logText(after)}`;
-    if(partner)used.push(move.partnerIndex);
+    if(card.kind==='binary')used.push(move.partnerIndex);
   }
   const preCount=own.length;
   const resolved=reduceBasis(own);
@@ -267,7 +291,7 @@ export function applyMove(s,move,trace=null) {
   if(move.continue){
     if(ns.finished||erased||!ns.hands[actor].some(id=>CARD_MAP[id]&&!['function','global'].includes(CARD_MAP[id].kind)))
       throw new Unsupported('この操作からは連続演算できません');
-    ns.pending={phase:'chain',owner:move.owner,target:move.target,spent};
+    ns.pending={phase:'chain',owner:move.owner,target:move.target,spent:[...(s.pending?.spent||[]),...spent],chainCount:(s.pending?.chainCount||0)+1};
     return ns;
   }
   if(!ns.finished&&enemyErased&&ns.hands[actor].some(id=>CARD_MAP[id]&&CARD_MAP[id].kind!=='function')){
@@ -302,6 +326,8 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
           for(let j=0;j<s.hands[s.turn].length;j++) if(i!==j&&FUNCTION_CARDS.includes(s.hands[s.turn][j]))
             for(const direction of (['DIV','COMPOSE','SUB'].includes(card.id)?['basisOverCard','cardOverBasis']:['basisOverCard']))choices.push({partnerIndex:j,direction});
         }
+        if(card.kind==='boardBinary')choices=s.boards[owner].map((_,otherTarget)=>({otherTarget})).filter(z=>z.otherTarget!==target);
+        if(card.kind==='scale')choices=SCALES.map(a=>({a}));
         if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(['PLUS_C','SHIFT'].includes(card.id)&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
         for(const opts of choices) {
@@ -358,10 +384,9 @@ export function chooseComMove(s) {
   if(s.pending){
     // The free follow-up is optional. Spend cards only for immediate gains
     // or for a winning action; otherwise keep them for the next turn.
-    if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0))return {pass:true};
+    if(!usefulAttack&&!moves.some(m=>m.scoreDelta?.[s.turn]>0)&&s.pending.phase!=='chain')return {pass:true};
     if(usefulAttack){const attacks=moves.filter(m=>m.scoreDelta?.[1-s.turn]<0);best=attacks.reduce((a,b)=>scoreMove(s,b,b.nextState,'hard')>scoreMove(s,a,a.nextState,'hard')?b:a);}
-    const {nextState,scoreDelta,...chosen}=best;
-    return chosen;
+    if(usefulAttack||s.pending.phase!=='chain'){const {nextState,scoreDelta,...chosen}=best;return chosen;}
   }
   // Bounded two-step lookahead. No replacement cards are drawn between steps,
   // so this search uses only the known hand and board.
@@ -383,6 +408,7 @@ export function chooseComMove(s) {
     }
     if(best.continue){const {nextState,scoreDelta,...chosen}=best;return chosen;}
   }
+  if(s.pending)return {pass:true};
   // Exchange is evaluated from the visible hand and legal actions only.
   // Never inspect the order of unseen replacement cards.
   const hand=s.hands[s.turn], functions=hand.filter(id=>cardPool(id)==='function').length;

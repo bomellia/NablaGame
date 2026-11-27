@@ -16,6 +16,9 @@ export function complex(re,im){
  return zero(im)?re:{t:'complex',re,im};
 }
 export function simplify(e){return isC(e)?complex(e.re,e.im):R.simplify(e);}
+const hyperbolicExp=(name,u)=>plus(times(n(.5),F('exp',u)),times(n(name==='sinh'?-.5:.5),F('exp',times(n(-1),u))));
+// Distribute a real scalar through a sum so Euler pairs cancel symbolically.
+export function linearScale(e,k){if(isC(e))return complex(linearScale(e.re,k),linearScale(e.im,k));if(e.t==='a')return plus(...e.v.map(v=>linearScale(v,k)));return times(n(k),e);}
 export function add(...items){
  if(!items.some(isC))return R.add(...items);
  const ps=items.map(pair);return complex(plus(...ps.map(p=>p[0])),plus(...ps.map(p=>p[1])));
@@ -54,6 +57,12 @@ export function fn(name,e){
  if(isC(e)){
   const [a,b]=pair(e);
   if(name==='exp')return complex(times(F('exp',a),F('cos',b)),times(F('exp',a),F('sin',b)));
+  if(['sin','cos','tan'].includes(name)){
+   const sh=hyperbolicExp('sinh',b),ch=hyperbolicExp('cosh',b);
+   const s=complex(times(F('sin',a),ch),zero(a)?sh:times(F('cos',a),sh));
+   const c=complex(zero(a)?ch:times(F('cos',a),ch),times(n(-1),F('sin',a),sh));
+   return name==='sin'?s:name==='cos'?c:div(s,c);
+  }
   if(['sqrt','log'].includes(name)&&a.t==='n'&&b.t==='n'){
    const r=Math.hypot(a.v,b.v),theta=Math.atan2(b.v,a.v);
    if(name==='log'){if(r===0)fail('ln(0)は未定義です');return complex(n(Math.log(r)),n(theta));}
@@ -95,12 +104,6 @@ export function compose(outer,inner){
    case 'complex':return add(substitute(e.re),mul(complex(Z(),O()),substitute(e.im)));
    case 'f':{
     const u=simplify(substitute(e.arg));
-    if(isC(u)&&['sin','cos','tan'].includes(e.f)){
-     const [a,b]=pair(u);
-     const sin=complex(times(F('sin',a),F('cosh',b)),times(F('cos',a),F('sinh',b)));
-     const cos=complex(times(F('cos',a),F('cosh',b)),times(n(-1),F('sin',a),F('sinh',b)));
-     return e.f==='sin'?sin:e.f==='cos'?cos:div(sin,cos);
-    }
     return fn(e.f,u);
    }
    default:fail('この関数の合成は未対応です');

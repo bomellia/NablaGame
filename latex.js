@@ -102,7 +102,7 @@ export function toLatex(e){
 }
 const labels={
  X3:'x^3',ABS_X:'\\left|x\\right|',SINH_X:'\\sinh x',COSH_X:'\\cosh x',
- ADD:'+',SUB:'-',SHIFT:'x\\mapsto x+C',RECIP:'\\frac{1}{f}',
+ ADD:'+',SUB:'-',SCALE:'x\\mapsto ax',RECIP:'\\frac{1}{f}',
  NEGEXP:"e^{-x}",TAN:"\\tan x",LN_X:"\\ln x",RECIP_X:"\\frac1x",ROOT_X:"\\sqrt{x}",CAUCHY:"\\frac{1}{1+x^2}",GAUSS:"e^{-x^2}",EXP_OP:"\\exp",SQUARE:"\\square^2",INT_HALF:"\\int_0^\\infty",INT_ALL:"\\int_{-\\infty}^\\infty",LAPLACE:"\\mathcal L",INV_LAPLACE:"\\mathcal L^{-1}",FOURIER:"\\mathcal F",INV_FOURIER:"\\mathcal F^{-1}",
  ZERO:'0',ONE:'1',X:'x',X2:'x^2',EXP:'e^x',SIN:'\\sin x',COS:'\\cos x',
  NABLA:'\\nabla',DELTA:'\\Delta',DIFF:'\\frac{\\mathrm{d}}{\\mathrm{d}x}',
