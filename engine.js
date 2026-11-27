@@ -1,4 +1,4 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.44';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.47';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
   hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.46';
@@ -166,6 +166,7 @@ export function validate(s,move) {
     if(!Number.isInteger(move.target)||move.target<0||move.target>=s.boards[move.owner].length)throw new Unsupported('対象の基底を選んでください');
   }
   if(card.kind==='function'&&s.boards[move.owner].length>=MAX_DIMENSION)throw new Unsupported('次元上限は4です');
+  if(card.kind==='boardBinary'&&move.owner===actor)throw new Unsupported('四則演算は相手の場にのみ使用できます');
   if(card.kind==='boardBinary'&&(!Number.isInteger(move.otherTarget)||move.otherTarget===move.target||move.otherTarget<0||move.otherTarget>=s.boards[move.owner].length))throw new Unsupported('同じ場の異なる2基底を選んでください');
   if(card.kind==='interval'&&!integralInterval(cardId,move.interval))throw new Unsupported('積分区間を指定してください');
   if(card.kind==='diffSign'&&![1,-1].includes(move.diffSign))throw new Unsupported('D±1 の符号を選んでください');
@@ -245,6 +246,12 @@ function replenish(state,actor,used){
  for(const id of used)state.hands[actor].push(drawWeighted(state,actor));
  for(const id of used)deck.splice(Math.floor(nextRandom(state)*(deck.length+1)),0,id);
 }
+// Every swap includes all currently held limit cards.
+export function swapMove(s,indices=[0]){
+ const required=s.hands[s.turn].flatMap((id,i)=>LIMIT_CARDS.includes(id)?[i]:[]);
+ const cardIndices=[...new Set([...indices,...required])].sort((a,b)=>a-b);
+ return {discard:true,cardIndex:cardIndices[0],cardIndices};
+}
 function recycle(state,actor,indices){replenish(state,actor,consume(state,actor,indices));}
 function endTurn(state,actor,used=[]){
  const spent=[...(state.pending?.spent||[]),...used];
@@ -271,6 +278,7 @@ export function applyMove(s,move,trace=null) {
     const ns=copy(s),actor=ns.turn;
     const indices=move.cardIndices??[move.cardIndex];
     if(s.finished||!Array.isArray(indices)||!indices.length||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||i<0||i>=s.hands[actor].length))throw new Unsupported('交換するカードを正しく選択してください');
+    if(s.hands[actor].some((id,i)=>LIMIT_CARDS.includes(id)&&!indices.includes(i)))throw new Unsupported('交換時は手札の極限カードをすべて交換してください');
     ns.log.unshift(`${actor===0?'あなた':'COM'}：カードを${indices.length}枚交換（ターン消費）`);
     ns.log=ns.log.slice(0,16);
     recycle(ns,actor,indices);
@@ -349,6 +357,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
     const card=CARD_MAP[s.hands[s.turn][i]];
     if(!card||s.pending&&card.kind==='function'||s.pending?.phase==='chain'&&card.kind==='global')continue;
     for(let owner=0;owner<2;owner++) {
+      if(card.kind==='boardBinary'&&owner===s.turn)continue;
       if(s.pending?.phase==='chain'&&owner!==s.pending.owner)continue;
       let accepted=0;
       const indices=s.pending?.phase==='chain'?[s.pending.target]:card.kind==='function'||card.kind==='global'?[null]:s.boards[owner].map((_,j)=>j);
@@ -380,7 +389,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
       }
     }
   }
-  if(!moves.length)return s.pending?[{pass:true}]:s.hands[s.turn].map((_,i)=>({discard:true,cardIndex:i,cardIndices:[i]}));
+  if(!moves.length)return s.pending?[{pass:true}]:s.hands[s.turn].map((_,i)=>swapMove(s,[i]));
   return moves;
 }
 function valueOf(e) {
@@ -490,7 +499,7 @@ export function chooseLegacyComMove(s) {
     const bad=hand.map((id,i)=>({i,id})).filter(({i,id})=>(!legal.has(i)||(cardScores.get(i)??-Infinity)<neutral-1)&&!(functions===1&&cardPool(id)==='function')).map(v=>v.i);
     if((bad.length>=2&&bestScore<neutral+2)||moves.every(m=>m.discard)) {
       const indices=bad.length?bad:hand.map((_,i)=>i);
-      return {discard:true,cardIndex:indices[0],cardIndices:indices};
+      return swapMove(s,indices);
     }
   }
   const {nextState,scoreDelta,...chosen}=best;
@@ -622,8 +631,8 @@ function planTurn(root,ctx,{width=3,depth=4,plans=4,rootSearch=false,allowSwap=t
   const seenIds=new Set(),indices=[];
   initialHand.forEach((id,i)=>{const duplicate=seenIds.has(id);seenIds.add(id);if(!useful.has(i)&&(duplicate||id==='ZERO'||['REFLECT','PLUS_C','ADD','SUB'].includes(id)))indices.push(i);});
   if(!indices.length&&!useful.size){const i=initialHand.findIndex(id=>!LIMIT_CARDS.includes(id)&&cardPool(id)==='operator');indices.push(i>=0?i:0);}
-  if(indices.length){const move={discard:true,cardIndex:indices[0],cardIndices:indices},p=ctx.run(root,move);
-   if(p?.ok)retain({state:p.state,path:[move],cost:0,remaining:initialHand.filter((_,i)=>!indices.includes(i)),swap:true},terminal);
+  if(indices.length){const move=swapMove(root,indices),p=ctx.run(root,move);
+   if(p?.ok)retain({state:p.state,path:[move],cost:0,remaining:initialHand.filter((_,i)=>!move.cardIndices.includes(i)),swap:true},terminal);
   }
  }
  terminal.sort((a,b)=>b.score-a.score);
@@ -645,7 +654,7 @@ export function chooseComMove(s,{timeMs,onProgress,now=Date.now,workBudget}={}){
  const tick=()=>{if(stop())return true;work++;return false;};
  const ctx={stop,tick,run:(state,move)=>tick()?null:preview(state,move)};
  ctx.evaluate=createStrategicEvaluator(stop);
- const fallback=s.pending?{pass:true}:{discard:true,cardIndex:0,cardIndices:[0]};
+ const fallback=s.pending?{pass:true}:swapMove(s);
  let best=fallback;onProgress?.(best);
  const root=hypothetical(s,seed),rootBudget=Math.max(1,Math.floor(limit*.45));
  ceiling=rootBudget;phaseDeadline=start+duration*.38;
@@ -669,7 +678,7 @@ export function chooseComMove(s,{timeMs,onProgress,now=Date.now,workBudget}={}){
    const initial=ctx.evaluate(state,actor);
    for(let ply=1;ply<cfg.horizon&&!state.finished;ply++){
     const moves=planTurn(state,ctx,{width:1,depth:2,plans:1,allowSwap:false,quick:true});
-    if(!moves.length){if(stop()){valid=false;break;}const p=ctx.run(state,state.pending?{pass:true}:{discard:true,cardIndex:0});if(!p?.ok){valid=false;break;}state=p.state;}
+    if(!moves.length){if(stop()){valid=false;break;}const p=ctx.run(state,state.pending?{pass:true}:swapMove(state));if(!p?.ok){valid=false;break;}state=p.state;}
     else state=moves[0].state;
    }
    if(!valid)break;

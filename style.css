@@ -192,3 +192,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .preview.notice{flex:none;min-width:0;color:var(--gold);white-space:normal;overflow-wrap:anywhere}
 .notice-detail{font:12px/1.4 var(--rune);letter-spacing:.015em;word-break:normal;overflow-wrap:anywhere}
 @media(max-width:700px){.notice-detail{font-size:11px}}
+
+/* Required swap selections are locked, not unavailable. */
+.card.swap-required:disabled{opacity:1;outline:2px dashed #e5c286;outline-offset:-3px;cursor:default}

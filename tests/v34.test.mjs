@@ -17,14 +17,14 @@ test('scale choices and Euler conversion',()=>{
 test('board arithmetic produces both exponential functions by Euler identities',()=>{
  const s=newGame(),ix=complex(n(0),X);
  const sh=realRepresentative(compose(fn('sin',X),ix)),ch=compose(fn('cos',X),ix);
- s.boards[0]=[sh,ch];s.hands[0][0]='ADD';s.hands[0][1]='SUB';
- const a=run(s,{cardIndex:0,owner:0,target:0,otherTarget:1});
- eq(a.state.boards[0][0],fn('exp',X));eq(a.state.boards[0][1],ch);
- const b=run(s,{cardIndex:1,owner:0,target:1,otherTarget:0});
- eq(b.state.boards[0][1],fn('exp',mul(n(-1),X)));eq(b.state.boards[0][0],sh);
- for(const r of [a,b]){assert.equal(r.delta[0],0);assert.deepEqual(inv(r.state),inv(s));}
- assert.equal(preview(s,{cardIndex:0,owner:0,target:0,otherTarget:0}).ok,false);
- assert.ok(legalMoves(s).some(m=>m.cardIndex===0&&m.owner===0&&m.target===0&&m.otherTarget===1));
+ s.boards[1]=[sh,ch];s.hands[0][0]='ADD';s.hands[0][1]='SUB';
+ const a=run(s,{cardIndex:0,owner:1,target:0,otherTarget:1});
+ eq(a.state.boards[1][0],fn('exp',X));eq(a.state.boards[1][1],ch);
+ const b=run(s,{cardIndex:1,owner:1,target:1,otherTarget:0});
+ eq(b.state.boards[1][1],fn('exp',mul(n(-1),X)));eq(b.state.boards[1][0],sh);
+ for(const r of [a,b]){assert.equal(r.delta[1],0);assert.deepEqual(inv(r.state),inv(s));}
+ assert.equal(preview(s,{cardIndex:0,owner:1,target:0,otherTarget:0}).ok,false);
+ assert.ok(legalMoves(s).some(m=>m.cardIndex===0&&m.owner===1&&m.target===0&&m.otherTarget===1));
 });
 test('three-step chain conserves all spent cards and does not refill early',()=>{
  const s=newGame();s.boards[1]=[pow(X,5),fn('sin',X)];s.hands[0]=['DIFF','DIFF','DIFF','DIFF','X','ONE','MUL','RECIP'];

@@ -1,5 +1,7 @@
 // Presentation-only translation. Never alter the engine's original reason or save data.
 const messages=new Map([
+ ['四則演算は相手の場にのみ使用できます','Arithmetic targets the enemy field only.'],
+ ['交換時は手札の極限カードをすべて交換してください','All limit cards must be swapped.'],
  ['上極限・下極限には無限遠で実数値を取ることの確認が必要です','Upper and lower limits require a verified real-valued tail.'],
  [
   "微分結果を確定できません",

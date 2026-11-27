@@ -22,8 +22,8 @@ export const CARDS = [
   {id:'DIFF_PM',label:'D±1',kind:'diffSign',count:2,description:'D=d/dx。f′(x)±f(x)（符号を選択）'},
   {id:'DIFF2_PLUS',label:'D²+1',kind:'single',count:2,description:'D=d/dx。f″(x)+f(x)'},
   {id:'INTEGRATE',label:'∫dx',kind:'constant',count:8,description:'積分。積分定数Cを選べる'},
-  {id:'MUL',label:'×',kind:'boardBinary',count:6,description:'同じ場の2基底を選び、最初の基底を fg に置換'},
-  {id:'DIV',label:'÷',kind:'boardBinary',count:5,description:'同じ場の2基底を選び、最初の基底を f/g に置換'},
+  {id:'MUL',label:'×',kind:'boardBinary',count:6,description:'相手の場の2基底を選び、最初の基底を fg に置換'},
+  {id:'DIV',label:'÷',kind:'boardBinary',count:5,description:'相手の場の2基底を選び、最初の基底を f/g に置換'},
   {id:'COMPOSE',label:'∘',kind:'binary',count:3,description:'場の基底と関数カードを合成。外側→内側の順に選択'},
   {id:'LIM_PLUS',label:'lim +∞',kind:'single',count:2,description:'x→+∞ の極限'},
   {id:'LIM_MINUS',label:'lim −∞',kind:'single',count:2,description:'x→−∞ の極限'},
@@ -41,8 +41,8 @@ export const CARDS = [
   // Tactical expansion (v0.33): new functions and noncommutative arithmetic.
   {id:'X3',label:'x³',kind:'function',count:2,expansion:true,strategy:true,description:'三次関数を追加・演算材料に使用'},
   {id:'ABS_X',label:'|x|',kind:'function',count:2,expansion:true,strategy:true,description:'絶対値関数を追加・演算材料に使用'},
-  {id:'ADD',label:'+',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'同じ場の2基底を選び、最初の基底を f+g に置換'},
-  {id:'SUB',label:'−',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'同じ場の2基底を選び、最初の基底を f−g に置換'},
+  {id:'ADD',label:'+',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'相手の場の2基底を選び、最初の基底を f+g に置換'},
+  {id:'SUB',label:'−',kind:'boardBinary',count:2,expansion:true,strategy:true,description:'相手の場の2基底を選び、最初の基底を f−g に置換'},
   {id:'SCALE',label:'x↦ax',kind:'scale',count:2,expansion:true,strategy:true,description:'f(x)をf(ax)へ変換（a=1/2, 2, i）'},
   {id:'RECIP',label:'1/f',kind:'single',count:2,expansion:true,strategy:true,description:'指定した基底の逆数（逆関数ではない）'},
   // Prototype expansion cards (opt-in deck option)
