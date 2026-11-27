@@ -64,14 +64,12 @@ export const INTEGRAL_INTERVALS=Object.freeze({
   {id:'zeroPlus',label:'0 → +∞',latex:'\\int_0^\\infty'},
   {id:'minusZero',label:'−∞ → 0',latex:'\\int_{-\\infty}^0'},
   {id:'onePlus',label:'1 → +∞',latex:'\\int_1^\\infty'},
-  {id:'zeroOne',label:'0 → 1',latex:'\\int_0^1'},
   {id:'xPlus',label:'x → +∞',latex:'\\int_x^\\infty'},
   {id:'minusX',label:'−∞ → x',latex:'\\int_{-\\infty}^x'}
  ]),
  INT_ALL:Object.freeze([
   {id:'all',label:'−∞ → +∞',latex:'\\int_{-\\infty}^\\infty'},
-  {id:'symmetricX',label:'−x → x',latex:'\\int_{-x}^x'},
-  {id:'symmetricOne',label:'−1 → 1',latex:'\\int_{-1}^1'}
+  {id:'symmetricX',label:'−x → x',latex:'\\int_{-x}^x'}
  ])
 });
 export const integralIntervals=id=>INTEGRAL_INTERVALS[id]||[];

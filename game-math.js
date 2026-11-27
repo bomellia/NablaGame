@@ -469,7 +469,6 @@ function positiveIntegral(e,mode){
  switch(mode){
   case 'zeroPlus':return minus(boundaryValue(p,'plus'),boundaryValue(p,'zero','plus'));
   case 'onePlus':return minus(boundaryValue(p,'plus'),compose(p,n(1)));
-  case 'zeroOne':return minus(compose(p,n(1)),boundaryValue(p,'zero','plus'));
   case 'xPlus':return minus(boundaryValue(p,'plus'),p);
   default:fail('未対応の積分区間');
  }
@@ -479,11 +478,10 @@ export function intervalIntegral(e,mode){
  if(isC(e))return complex(intervalIntegral(e.re,mode),intervalIntegral(e.im,mode));
  const reflect=()=>simplify(substituteNegX(e));
  switch(mode){
-  case 'zeroPlus':case 'onePlus':case 'zeroOne':case 'xPlus':return positiveIntegral(e,mode);
+  case 'zeroPlus':case 'onePlus':case 'xPlus':return positiveIntegral(e,mode);
   case 'minusZero':return positiveIntegral(reflect(),'zeroPlus');
   case 'minusX':return simplify(substituteNegX(positiveIntegral(reflect(),'xPlus')));
   case 'all':return simplify(add(positiveIntegral(e,'zeroPlus'),positiveIntegral(reflect(),'zeroPlus')));
-  case 'symmetricOne':return simplify(add(positiveIntegral(e,'zeroOne'),positiveIntegral(reflect(),'zeroOne')));
   case 'symmetricX':{
    // Both improper integrals at 0 must exist independently. Never use a
    // Cauchy principal value for a divergent odd integrand.
