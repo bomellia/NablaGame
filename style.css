@@ -185,5 +185,5 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 /* v0.40: Keep the specific operation failure readable on compact screens. */
 .preview.invalid{flex:none;display:flex;flex-direction:column;gap:2px;min-width:0;color:#e4b29b;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
 .error-kind{font:10px var(--rune);letter-spacing:.05em}
-.error-detail{font:12px/1.4 system-ui,sans-serif;letter-spacing:normal;word-break:normal;overflow-wrap:anywhere}
+.error-detail{font:12px/1.4 var(--rune);letter-spacing:.015em;word-break:normal;overflow-wrap:anywhere}
 @media(max-width:700px){.error-kind{font-size:9px}.error-detail{font-size:11px}}

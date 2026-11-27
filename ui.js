@@ -5,6 +5,7 @@ import {previewVariants} from './formula-preview.js?v=0.29';
 import {rune,sealMarkup,logRune} from './sigil.js?v=0.32';
 import {fitMath} from './fit-math.js?v=0.29';
 import {transitionBoard,animationMarkup} from './seal-animation.js?v=0.32';
+import {feedbackEnglish} from './operation-feedback.js?v=0.41';
 const $=id=>document.getElementById(id);
 const formula=e=>mathMarkup(toLatex(e),display(e));
 const basisFormula=e=>mathMarkup('\\displaystyle '+toLatex(e),display(e));
@@ -76,7 +77,8 @@ function actionMarkup(){
  const phase=game.pending?.phase==='chain'?rune('CHAIN')+' '+((game.pending.chainCount||1)+1):game.pending?.phase==='bonus'?rune('BREAK')+' '+(game.pending.bonusCount||1):'';
  const actionLabel=result?.state?.finished?'FINISH':result?.state?.pending?.phase==='bonus'?'BREAK':'CAST';
  const status=result&&!result.ok?(result.reason||'演算を実行できません。'):message;
- const statusHtml=status?'<div class="preview invalid" role="status" aria-live="polite"><span class="error-kind" aria-hidden="true">⊘ '+errorRune(status)+'</span><span class="error-detail" lang="ja">'+esc(status)+'</span></div>':'';
+ const english=feedbackEnglish(status);
+ const statusHtml=status?'<div class="preview invalid" role="status" aria-live="polite" lang="en" aria-label="'+esc(english)+'"><span class="error-kind" aria-hidden="true">⊘ '+errorRune(status)+'</span><span class="error-detail" aria-hidden="true">'+esc(rune(english))+'</span></div>':'';
  const title=!c?'DRAW':move?'CAST':['binary','boardBinary'].includes(c.kind)?(selection.operands.length?'SECOND':'FIRST'):isFieldCard(c)?'FIELD':'MARK';
  const buttons=confirming?'<div class="action-buttons confirm-actions" data-count="'+(canChain?3:2)+'">'+actionButton('cancel-btn','↶','BACK')+(canChain?actionButton('chain-btn','⛓','CHAIN'):'')+actionButton('act-btn','✧',actionLabel,true,!result?.ok)+'</div>':'<div class="action-buttons">'+actionButton('hint-btn','✦','HINT')+(game.pending?actionButton('pass-btn','»','END'):actionButton('swap-btn','↻','SWAP',false,!game.deck.length))+(c?actionButton('cancel-btn','↶','BACK'):'')+'</div>';
  return '<div class="flow-steps"><span class="'+(c?'done':'current')+'">1 ◇</span><span class="'+(c&&!move?'current':move?'done':'')+'">2 ◎</span><span class="'+(move?'current':'')+'">3 ✧</span></div><div class="flow-body"><div class="action-title">'+(phase?phase+' · ':'')+rune(title)+'</div>'+(c?optionsHtml(c):'')+(move&&result?.ok?ritualResult(game,move,result):'') +statusHtml+'</div>'+buttons;
