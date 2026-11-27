@@ -383,13 +383,127 @@ function halfIntegral(e){
  }
  fail('広義積分の収束と値を確定できません');
 }
-export function advancedOperation(id,e){
+// Conservative continuity/real-domain proof on an open half-axis. A sign
+// mask is an enclosure, not numerical sampling. Unknown domain => reject.
+const NEG=1,ZER=2,POS=4,ANY=7;
+const signs=m=>[-1,0,1].filter((_,i)=>m&(1<<i));
+const bit=s=>1<<(s+1);
+function signCombine(a,b,product){
+ let out=0;
+ for(const u of signs(a))for(const v of signs(b)){
+  if(product)out|=bit(u*v);
+  else out|=u*v===-1?ANY:bit(Math.sign(u+v));
+ }
+ return out;
+}
+function continuousSign(e,side){
+ if(!e)return 0;
+ switch(e.t){
+ case 'n':return Number.isFinite(e.v)?bit(Math.sign(e.v)):0;
+ case 'x':return side==='plus'?POS:NEG;
+ case 'a':case 'm':{
+  let mask=e.t==='a'?ZER:POS;
+  for(const v of e.v){const q=continuousSign(v,side);if(!q)return 0;mask=signCombine(mask,q,e.t==='m');}
+  return mask;
+ }
+ case 'p':{
+  const m=continuousSign(e.b,side),k=e.e;
+  if(!m||!Number.isFinite(k)||k<0&&(m&ZER))return 0;
+  if(!Number.isInteger(k)){
+   if(m&NEG)return 0;
+   return (m&POS?POS:0)|(m&ZER?ZER:0);
+  }
+  if(k===0)return POS;
+  return k%2===0?((m&(NEG|POS)?POS:0)|(m&ZER?ZER:0)):m;
+ }
+ case 'f':{
+  const m=continuousSign(e.arg,side);if(!m)return 0;
+  switch(e.f){
+   case 'exp':case 'cosh':return POS;
+   case 'abs':return (m&(NEG|POS)?POS:0)|(m&ZER?ZER:0);
+   case 'sqrt':return m&NEG?0:m;
+   case 'log':return m===POS?ANY:0;
+   case 'logabs':return m&ZER?0:ANY;
+   case 'sign':return m===NEG||m===ZER||m===POS?m:0;
+   case 'sinh':case 'tanh':case 'atan':case 'asinh':case 'erf':case 'erfi':return m;
+   case 'sin':case 'cos':case 'Si':case 'Shi':case 'FresnelS':case 'FresnelC':return ANY;
+   case 'Ei':return m&ZER?0:ANY;
+   case 'Ci':case 'Chi':return m===POS?ANY:0;
+   default:return 0;
+  }
+ }
+ default:return 0;
+ }
+}
+function assertHalfDomain(e,side='plus'){
+ if(!continuousSign(e,side))fail('積分区間内の特異点・実数定義域を確認できません');
+}
+function constantTree(e){
+ if(!e)return false;
+ if(e.t==='n')return Number.isFinite(e.v);
+ if(e.t==='complex')return constantTree(e.re)&&constantTree(e.im);
+ if(e.t==='a'||e.t==='m')return e.v.every(constantTree);
+ if(e.t==='p')return Number.isFinite(e.e)&&constantTree(e.b);
+ if(e.t==='f')return constantTree(e.arg);
+ return false;
+}
+function boundaryValue(e,point,side='plus'){
+ const q=limit(e,point,side);
+ if(q.type==='finite'&&Number.isFinite(q.v))return n(q.v);
+ if(q.type==='symbolic'&&constantTree(q.expr))return q.expr;
+ fail('広義積分の境界で有限な収束値を確定できません');
+}
+const minus=(a,b)=>simplify(add(a,linearScale(b,-1)));
+function primitiveOn(e,side='plus'){
+ const p=integrate(e,0);assertHalfDomain(p,side);return p;
+}
+// Avoid subtracting infinities. Each side of zero is evaluated separately.
+// For variable bounds on a half-axis, the existing game convention stores
+// the formula on its connected branch without retaining a domain annotation.
+function positiveIntegral(e,mode){
+ assertHalfDomain(e);
+ if(mode==='zeroPlus'){
+  try{return halfIntegral(e);}catch(err){if(!(err instanceof R.Unsupported))throw err;}
+ }
+ const p=primitiveOn(e);
+ switch(mode){
+  case 'zeroPlus':return minus(boundaryValue(p,'plus'),boundaryValue(p,'zero','plus'));
+  case 'onePlus':return minus(boundaryValue(p,'plus'),compose(p,n(1)));
+  case 'zeroOne':return minus(compose(p,n(1)),boundaryValue(p,'zero','plus'));
+  case 'xPlus':return minus(boundaryValue(p,'plus'),p);
+  default:fail('未対応の積分区間');
+ }
+}
+export function intervalIntegral(e,mode){
+ e=simplify(e);
+ if(isC(e))return complex(intervalIntegral(e.re,mode),intervalIntegral(e.im,mode));
+ const reflect=()=>simplify(substituteNegX(e));
+ switch(mode){
+  case 'zeroPlus':case 'onePlus':case 'zeroOne':case 'xPlus':return positiveIntegral(e,mode);
+  case 'minusZero':return positiveIntegral(reflect(),'zeroPlus');
+  case 'minusX':return simplify(substituteNegX(positiveIntegral(reflect(),'xPlus')));
+  case 'all':return simplify(add(positiveIntegral(e,'zeroPlus'),positiveIntegral(reflect(),'zeroPlus')));
+  case 'symmetricOne':return simplify(add(positiveIntegral(e,'zeroOne'),positiveIntegral(reflect(),'zeroOne')));
+  case 'symmetricX':{
+   // Both improper integrals at 0 must exist independently. Never use a
+   // Cauchy principal value for a divergent odd integrand.
+   assertHalfDomain(e,'plus');assertHalfDomain(e,'minus');
+   const p=primitiveOn(e,'plus');assertHalfDomain(p,'minus');
+   const left=boundaryValue(p,'zero','minus'),right=boundaryValue(p,'zero','plus');
+   if(!equal(left,right))fail('原始関数の左右の境界値を一致させられません');
+   return minus(p,simplify(substituteNegX(p)));
+  }
+  default:fail('未対応の積分区間');
+ }
+}
+
+export function advancedOperation(id,e,interval){
  e=simplify(e);
  switch(id){
   case 'EXP_OP':return fn('exp',e);
   case 'SQUARE':return pow(e,2);
-  case 'INT_HALF':return halfIntegral(e);
-  case 'INT_ALL':return add(halfIntegral(e),halfIntegral(simplify(substituteNegX(e))));
+  case 'INT_HALF':return intervalIntegral(e,interval??'zeroPlus');
+  case 'INT_ALL':return intervalIntegral(e,interval??'all');
   case 'LAPLACE':return lap(e);
   case 'INV_LAPLACE':return invLap(e);
   case 'FOURIER':return fourier(e);

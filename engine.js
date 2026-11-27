@@ -1,7 +1,7 @@
-import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS} from './cards.js?v=0.34';
+import {CARD_MAP, CONSTANTS, FUNCTION_CARDS,makeDeck,HAND_SIZE,MAX_DIMENSION,SCALES,cardPool,LIMIT_CARDS,integralIntervals,integralInterval} from './cards.js?v=0.35';
 import {Unsupported, x, constant, add, mul, div, derivative, integrate, inverse, fn,
   fromCard, limit, oscillatoryLimit, reduceBasis, display, expressionSize,
-  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.34';
+  hasEmptyRealDomain, substituteNegX, simplify, antiderivative,advancedOperation,compose,complex,linearScale} from './game-math.js?v=0.35';
 const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
@@ -150,6 +150,7 @@ export function validate(s,move) {
   }
   if(card.kind==='function'&&s.boards[move.owner].length>=MAX_DIMENSION)throw new Unsupported('次元上限は4です');
   if(card.kind==='boardBinary'&&(!Number.isInteger(move.otherTarget)||move.otherTarget===move.target||move.otherTarget<0||move.otherTarget>=s.boards[move.owner].length))throw new Unsupported('同じ場の異なる2基底を選んでください');
+  if(card.kind==='interval'&&!integralInterval(cardId,move.interval))throw new Unsupported('積分区間を指定してください');
   if(card.kind==='scale'&&!SCALES.includes(move.a))throw new Unsupported('倍率aを選んでください');
   if(cardId==='DELTA'&&s.turns===0)throw new Unsupported('先攻1ターン目のΔは使用できません');
   if(card.kind==='binary') {
@@ -184,7 +185,8 @@ function opSingle(id,basis,move,partner) {
     }
     case 'SQRT':return fn('sqrt',basis);
     case 'LOG':return fn('log',basis);
-    case 'EXP_OP':case 'SQUARE':case 'INT_HALF':case 'INT_ALL':case 'LAPLACE':return advancedOperation(id,basis);
+    case 'INT_HALF':case 'INT_ALL':return advancedOperation(id,basis,move.interval);
+    case 'EXP_OP':case 'SQUARE':case 'LAPLACE':return advancedOperation(id,basis);
     case 'INVERSE':return inverse(basis);
     case 'PLUS_C':return add(basis,constant(move.C));
     case 'REFLECT':return substituteNegX(basis);
@@ -283,7 +285,7 @@ export function applyMove(s,move,trace=null) {
   if(trace){trace.erased=erased;trace.removed=resolved.removed.filter(i=>i<s.boards[move.owner].length);}
   const targetName=move.owner===0?'あなた':'COM';
   const actorName=actor===0?'あなた':'COM';
-  ns.log.unshift(`${actorName}：${targetName}の場に ${card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
+  ns.log.unshift(`${actorName}：${targetName}の場に ${card.kind==='interval'?'∫ '+integralInterval(id,move.interval).label:card.label} ／ ${info}${erased?`（基底${erased}個消滅）`:''}`);
   ns.log=ns.log.slice(0,16);
   const spent=consume(ns,actor,used);
   finish(ns);
@@ -328,6 +330,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         }
         if(card.kind==='boardBinary')choices=s.boards[owner].map((_,otherTarget)=>({otherTarget})).filter(z=>z.otherTarget!==target);
         if(card.kind==='scale')choices=SCALES.map(a=>({a}));
+        if(card.kind==='interval')choices=integralIntervals(card.id).map(z=>({interval:z.id}));
         if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(['PLUS_C','SHIFT'].includes(card.id)&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
         for(const opts of choices) {
@@ -337,10 +340,10 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
             moves.push({...move,scoreDelta:result.delta,...(includeState?{nextState:result.state}:{})});
             accepted++;
             if(moves.length>=limit)return moves;
-            if(accepted>=perCardOwner)break;
+            if(accepted>=Math.max(perCardOwner,card.kind==='interval'?MAX_DIMENSION*integralIntervals(card.id).length:0))break;
           }
         }
-        if(accepted>=perCardOwner)break;
+        if(accepted>=Math.max(perCardOwner,card.kind==='interval'?MAX_DIMENSION*integralIntervals(card.id).length:0))break;
       }
     }
   }

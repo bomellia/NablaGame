@@ -33,8 +33,8 @@ export const CARDS = [
   {id:'LOG',label:'log',kind:'single',count:3,description:'自然対数を取る'},
   {id:'EXP_OP',label:'exp',kind:'single',count:2,description:'指数化（結果確定時のみ）'},
   {id:'SQUARE',label:'□²',kind:'single',count:2,description:'二乗（結果確定時のみ）'},
-  {id:'INT_HALF',label:'∫₀∞',kind:'single',count:2,description:'半無限区間の広義積分（結果確定時のみ）'},
-  {id:'INT_ALL',label:'∫₋∞∞',kind:'single',count:2,description:'全実数区間の広義積分（結果確定時のみ）'},
+  {id:'INT_HALF',label:'∫ₐᵇ',kind:'interval',count:2,description:'片側積分：区間を選択（収束と結果が確定する場合のみ）'},
+  {id:'INT_ALL',label:'∫₋ₐᵃ',kind:'interval',count:2,description:'対称積分：区間を選択（収束と結果が確定する場合のみ）'},
   {id:'LAPLACE',label:'ℒ',kind:'single',count:2,description:'ラプラス変換（結果確定時のみ）'},
   // Tactical expansion (v0.33): new functions and noncommutative arithmetic.
   {id:'X3',label:'x³',kind:'function',count:2,expansion:true,strategy:true,description:'三次関数を追加・演算材料に使用'},
@@ -58,3 +58,21 @@ export const SCALES=[0.5,2,'i'];
 export const cardPool=id=>CARD_MAP[id]?.kind==='function'?'function':'operator';
 
 export const LIMIT_CARDS=['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'];
+
+export const INTEGRAL_INTERVALS=Object.freeze({
+ INT_HALF:Object.freeze([
+  {id:'zeroPlus',label:'0 → +∞',latex:'\\int_0^\\infty'},
+  {id:'minusZero',label:'−∞ → 0',latex:'\\int_{-\\infty}^0'},
+  {id:'onePlus',label:'1 → +∞',latex:'\\int_1^\\infty'},
+  {id:'zeroOne',label:'0 → 1',latex:'\\int_0^1'},
+  {id:'xPlus',label:'x → +∞',latex:'\\int_x^\\infty'},
+  {id:'minusX',label:'−∞ → x',latex:'\\int_{-\\infty}^x'}
+ ]),
+ INT_ALL:Object.freeze([
+  {id:'all',label:'−∞ → +∞',latex:'\\int_{-\\infty}^\\infty'},
+  {id:'symmetricX',label:'−x → x',latex:'\\int_{-x}^x'},
+  {id:'symmetricOne',label:'−1 → 1',latex:'\\int_{-1}^1'}
+ ])
+});
+export const integralIntervals=id=>INTEGRAL_INTERVALS[id]||[];
+export const integralInterval=(id,value)=>integralIntervals(id).find(i=>i.id===(value??integralIntervals(id)[0]?.id));
