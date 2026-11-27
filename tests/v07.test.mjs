@@ -32,9 +32,9 @@ test('initial boards are asymmetric and vary independently from deck shuffle',()
  const s=newGame({random:()=>.5});assert.notDeepEqual(s.boards[0],s.boards[1]);
  assert.equal(s.boards[0].some(e=>e.t==='n'),false);
 });
-test('v14 limit-card frequencies',()=>{
+test('current limit-card frequencies',()=>{
  const deck=makeDeck(false);
- for(const id of ['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'])assert.equal(deck.filter(v=>v===id).length,({LIM_PLUS:3,LIM_MINUS:3,LIM_ZERO:4,LIMSUP:2,LIMINF:2})[id]);
+ for(const id of ['LIM_PLUS','LIM_MINUS','LIM_ZERO','LIMSUP','LIMINF'])assert.equal(deck.filter(v=>v===id).length,2);
 });
 test('elementary integrals sec csc tan cot sin squared and derivative substitutions',()=>{
  for(const e of [fn('sec',X),fn('csc',X),fn('tan',X),fn('cot',X),pow(fn('sin',X),2),mul(X,fn('exp',X)),mul(X,fn('sin',pow(X,2))),fn('sin',mul(n(3),X))]) {

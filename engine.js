@@ -6,22 +6,39 @@ const copy = obj => JSON.parse(JSON.stringify(obj));
 function shuffle(items,random=Math.random) {
   const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;
 }
-// Pair openings by family and approximate complexity, then independently
-// randomize which player gets each member. No redraw loop or identical bases.
+// Curated low-complexity candidates, independent of the card inventory.
+// Both sides draw from one shuffled pool; no matched-family requirement.
+export function openingPool(){
+ const X=x(),n=constant,Q=fromCard('X2'),C=mul(Q,X),negative=e=>mul(n(-1),e),
+  scaled=k=>mul(n(k),X),unitQ=add(n(1),Q),sin=fromCard('SIN'),cos=fromCard('COS');
+ return [
+  ['polynomial',[X,Q,C,mul(Q,Q),add(Q,X),add(C,negative(X)),add(Q,n(1))]],
+  ['trigonometric',[sin,cos,fn('sin',scaled(2)),fn('cos',scaled(2)),fromCard('TAN'),mul(sin,sin),add(sin,cos)]],
+  ['exponential',[fromCard('EXP'),fromCard('NEGEXP'),fn('exp',scaled(2)),fn('exp',scaled(-2)),fromCard('GAUSS'),mul(X,fromCard('NEGEXP'))]],
+  ['rational',[fromCard('RECIP_X'),div(n(1),Q),fromCard('CAUCHY'),div(X,unitQ),div(n(1),mul(unitQ,unitQ))]],
+  ['radical',[fromCard('ROOT_X'),fn('abs',X),fn('sqrt',unitQ)]],
+  ['logarithmic',[fromCard('LN_X'),fn('log',unitQ)]],
+  ['inverse-trig',[fn('atan',X),fn('asin',X)]]
+ ].flatMap(([family,expressions])=>expressions.map(expr=>({family,expr:simplify(expr)})));
+}
 export function initialBoards(random=Math.random){
-  const X=x(),Q=fromCard('X2'),C=mul(Q,X),n=constant;
-  const pairs=[
-    [[Q,C],[add(Q,X),add(Q,mul(n(-1),X))],[add(C,X),add(C,mul(n(-1),X))]],
-    [[fromCard('SIN'),fromCard('COS')],[fn('sin',mul(n(2),X)),fn('cos',mul(n(2),X))]],
-    [[fromCard('EXP'),fn('exp',mul(n(-1),X))],[fn('exp',mul(n(2),X)),fn('exp',mul(n(-2),X))]]
-  ];
-  const boards=[[],[]];
-  for(const family of pairs){
-    const pair=family[Math.min(family.length-1,Math.floor(random()*family.length))];
-    const first=random()<.5?0:1;
-    boards[0].push(simplify(pair[first]));boards[1].push(simplify(pair[1-first]));
+ const pool=shuffle(openingPool(),random);
+ const boards=[[],[]],families=[new Map(),new Map()];
+ const start=random()<.5?0:1;
+ for(let round=0;round<3;round++){
+  for(const owner of [start,1-start]){
+   const board=boards[owner],counts=families[owner];
+   // Keep three independent nonconstant directions, including independence
+   // from 1 so adding a constant remains a meaningful defensive option.
+   // Two members of one family are allowed; no family pairing across sides.
+   const i=pool.findIndex(({family,expr})=>(counts.get(family)||0)<2&&
+    reduceBasis([constant(1),...board,expr]).kept.length===board.length+2);
+   if(i<0)throw new Error('Opening pool cannot provide an independent basis');
+   const [{family,expr}]=pool.splice(i,1);
+   board.push(expr);counts.set(family,(counts.get(family)||0)+1);
   }
-  return boards;
+ }
+ return boards;
 }
 export function initialBoard(random=Math.random){return initialBoards(random)[0];}
 
