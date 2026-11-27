@@ -339,10 +339,12 @@ export function preview(s,move) {
     throw e;
   }
 }
-export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=false}={}) {
+export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=false,shouldStop=null,uniqueCards=false}={}) {
   if(s.finished)return [];
-  const moves=[];
+  const moves=[],seenCards=new Set();
   for(let i=0;i<s.hands[s.turn].length;i++) {
+    if(shouldStop?.())return moves;
+    if(uniqueCards){const id=s.hands[s.turn][i];if(seenCards.has(id))continue;seenCards.add(id);}
     const card=CARD_MAP[s.hands[s.turn][i]];
     if(!card||s.pending&&card.kind==='function'||s.pending?.phase==='chain'&&card.kind==='global')continue;
     for(let owner=0;owner<2;owner++) {
@@ -363,6 +365,7 @@ export function legalMoves(s,{limit=2500,perCardOwner=Infinity,includeState=fals
         if(card.kind==='constant')choices=CONSTANTS.filter(c=>!(['PLUS_C','SHIFT'].includes(card.id)&&c===0)).map(C=>({C}));
         if(card.kind==='limitZero')choices=['two','plus','minus'].map(side=>({side}));
         for(const opts of choices) {
+          if(shouldStop?.())return moves;
           const move={cardIndex:i,owner,target,...opts};
           const result=preview(s,move);
           if(result.ok){
@@ -432,7 +435,7 @@ function scoreMove(state,move,after,difficulty,threat) {
   if(difficulty==='hard') return raw+Math.random()*1.3;
   return raw+Math.random()*5;
 }
-export function chooseComMove(s) {
+export function chooseLegacyComMove(s) {
   // Search both players for every card instead of exhausting the first cards.
   // Preview results are reused for scoring, avoiding duplicate CAS work.
   const moves=legalMoves(s,{limit:1000,perCardOwner:10,includeState:true});
@@ -492,5 +495,199 @@ export function chooseComMove(s) {
   const {nextState,scoreDelta,...chosen}=best;
   return chosen;
 }
+
+// v0.45: bounded search across complete turns under hidden information.
+// Search state is reconstructed from the public board and the actor's own hand.
+// Never read the real opponent hand, deck order, or game RNG to plan an action.
+const STRATEGY={
+ easy:{depth:2,width:2,plans:2,samples:1,horizon:2,budget:500,ms:1000,noise:5},
+ normal:{depth:4,width:4,plans:3,samples:2,horizon:3,budget:1600,ms:2700,noise:1.0},
+ hard:{depth:6,width:6,plans:3,samples:3,horizon:5,budget:2800,ms:4200,noise:0.12}
+};
+function seeded(seed){let a=seed>>>0;return ()=>((a=(Math.imul(a,1664525)+1013904223)>>>0)/4294967296);}
+function publicSeed(s){let h=2166136261;const data=JSON.stringify([s.boards,s.hands[s.turn],s.turn,s.turns,s.pending,s.extended]);for(let i=0;i<data.length;i++)h=Math.imul(h^data.charCodeAt(i),16777619);return h>>>0;}
+function hypothetical(s,seed){
+ const random=seeded(seed),actor=s.turn,hand=[...s.hands[actor]],spent=[...(s.pending?.spent||[])];
+ const unseen=makeDeck(s.extended!==false);
+ for(const id of [...hand,...spent]){const i=unseen.indexOf(id);if(i>=0)unseen.splice(i,1);}
+ const deck=shuffle(unseen,random),hands=[[],[]];hands[actor]=hand;hands[1-actor]=deck.splice(0,HAND_SIZE);
+ return {...copy({boards:s.boards,turn:actor,turns:s.turns,pending:s.pending,finished:s.finished,winner:s.winner,extended:s.extended,difficulty:s.difficulty}),hands,deck,rng:Math.floor(random()*4294967296),log:[]};
+}
+const bare=m=>{const {nextState,scoreDelta,...move}=m;return move;};
+function handQuality(hand){
+ const functions=hand.filter(id=>cardPool(id)==='function'&&id!=='ZERO').length;
+ const operators=hand.filter(id=>cardPool(id)==='operator');
+ const variety=new Set(operators).size;
+ return Math.min(2,functions)*.85+variety*.21+operators.reduce((v,id)=>v+(LIMIT_CARDS.includes(id)?.43:['DIFF_PM','DIFF2_PLUS','DIFF','NABLA','DELTA','DIV','INT_ALL'].includes(id)?.28:.10),0);
+}
+function createStrategicEvaluator(stop){
+ const threat=makeThreatEvaluator(),cache=new Map(),exactCache=new Map();
+ function risk(board,exact=false){
+  const key=JSON.stringify(board),target=exact?exactCache:cache;if(target.has(key))return target.get(key);
+  // Cheap structural estimate for broad search, exact symbolic tests only on finalists.
+  let result=board.reduce((v,e)=>v+(e.t==='n'?1.6:/^(sin|cos|exp)$/.test(e.f||'')?.65:e.t==='x'?.8:.35),0)*(board.length===1?2:board.length===2?1.25:1);
+  if(exact&&!stop()&&exactCache.size<32&&board.every(e=>expressionSize(e)<=24)){
+   result=boardRisk(board,threat);
+   for(const id of ['NABLA','DELTA','MUL','DIV']){
+    if(stop())break;
+    let loss=0;
+    if(id==='NABLA'||id==='DELTA'){
+     try{const b=board.map(e=>id==='DELTA'?safeDerivative(safeDerivative(e)):safeDerivative(e));loss=board.length-reduceBasis(b).kept.length;}catch{}
+    }else{
+     for(let i=0;i<board.length&&!stop();i++)for(let j=0;j<board.length&&!stop();j++)if(i!==j){
+      try{const b=[...board];b[i]=opSingle(id,b[i],{},b[j]);loss=Math.max(loss,board.length-reduceBasis(b).kept.length);}catch{}
+     }
+    }
+    result+=loss*(id==='NABLA'?.65:id==='DELTA'?.33:.35);
+   }
+  }
+  target.set(key,result);return result;
+ }
+ return (s,actor,exact=false)=>{
+  if(s.finished)return s.winner===actor?10000:s.winner===1-actor?-10000:0;
+  const a=s.boards[actor],b=s.boards[1-actor];
+  const strength=d=>[0,0,24,38,49][d]??49;
+  return strength(a.length)-strength(b.length)+.9*(a.reduce((v,e)=>v+valueOf(e),0)-b.reduce((v,e)=>v+valueOf(e),0))+1.7*(risk(b,exact)-risk(a,exact));
+ };
+}
+function sameBoard(a,b){return JSON.stringify(a.boards)===JSON.stringify(b.boards);}
+function planKey(s){return JSON.stringify([s.boards,s.hands[s.turn],s.pending?.phase,s.pending?.owner,s.pending?.target]);}
+function planTurn(root,ctx,{width=3,depth=4,plans=4,rootSearch=false,allowSwap=true,quick=false,onBest=null}={}){
+ const actor=root.turn,initialHand=root.hands[actor],terminal=[],seen=new Set();
+ const initial={state:root,path:[],cost:0,remaining:initialHand};
+ let frontier=[initial];
+ const survival=node=>rootSearch&&root.boards[actor].length===1&&node.state.boards[actor].length===1&&!node.state.finished?18:0;
+ const rating=node=>ctx.evaluate(node.state,actor)+.50*handQuality(node.remaining)-node.cost*.6-survival(node);
+ let reported=-Infinity;
+ const retain=(node,arr)=>{node.score=rating(node);arr.push(node);if(arr===terminal&&node.score>reported){reported=node.score;onBest?.(node);}};
+ for(let level=0;level<depth&&frontier.length&&!ctx.stop();level++){
+  const next=[];
+  for(const node of frontier){
+   if(ctx.stop())break;
+   const s=node.state;
+   if(s.pending&&node.path.length===0){const p=ctx.run(s,{pass:true});if(p?.ok)retain({...node,state:p.state,path:[{pass:true}]},terminal);}
+   const moves=legalMoves(s,{limit:quick?48:rootSearch&&level===0?300:80,perCardOwner:quick?2:rootSearch&&level===0?12:6,includeState:true,uniqueCards:true,shouldStop:ctx.tick});
+   for(const m of moves){
+    if(m.pass||m.discard||!m.nextState)continue;
+    const move=bare(m),used=[move.cardIndex,...(Number.isInteger(move.partnerIndex)?[move.partnerIndex]:[])];
+    const remaining=s.hands[actor].filter((_,i)=>!used.includes(i));
+    const n={state:m.nextState,path:[...node.path,move],cost:node.cost+used.length,remaining};
+    if(n.state.finished||n.state.turn!==actor){
+     retain(n,terminal);
+     if(n.state.finished&&n.state.winner===actor)return [n];
+    }else{
+     retain(n,next);
+     // Passing is always a valid conclusion of a bonus or chain.
+     const p=ctx.run(n.state,{pass:true});if(p?.ok)retain({...n,state:p.state,path:[...n.path,{pass:true}]},terminal);
+    }
+    if(ctx.stop())break;
+    if(!quick&&!m.nextState.finished&&m.nextState.turn!==actor&&move.target!=null&&!sameBoard(s,m.nextState)&&m.scoreDelta[actor]===0&&m.scoreDelta[1-actor]===0&&remaining.some(id=>!['function','global'].includes(CARD_MAP[id]?.kind))){
+     const chain={...move,continue:true},p=ctx.run(s,chain);
+     if(p?.ok){
+      const candidate={...n,state:p.state,path:[...node.path,chain]};
+      // On the last enemy basis, test known finishers before pruning setup moves.
+      if(rootSearch&&p.state.boards[1-actor].length===1&&move.owner===1-actor){
+       const h=p.state.hands[actor];
+       for(let j=0;j<h.length&&!ctx.stop();j++){
+        const id=h[j];let opts=LIMIT_CARDS.includes(id)?(id==='LIM_ZERO'?[{side:'two'},{side:'plus'},{side:'minus'}]:[{}]):id==='DIFF_PM'?[{diffSign:-1},{diffSign:1}]:id==='INT_ALL'?integralIntervals(id).map(v=>({interval:v.id})):['DIFF','DIFF2_PLUS','SQRT','LOG'].includes(id)?[{}]:[];
+        for(const opt of opts){
+         const fin={cardIndex:j,owner:1-actor,target:move.target,...opt},q=ctx.run(p.state,fin);
+         if(q?.ok&&q.state.finished&&q.state.winner===actor){
+          const winner={state:q.state,path:[...candidate.path,fin],cost:n.cost+1,remaining:h.filter((_,i)=>i!==j)};
+          retain(winner,terminal);return [winner];
+         }
+        }
+       }
+      }
+      retain(candidate,next);
+     }
+    }
+   }
+  }
+  // Keep a separate quota for setup chains so immediate bonus paths do not
+  // crowd out all preparatory moves. Deduplicate equivalent board/hand states.
+  next.sort((a,b)=>b.score-a.score);
+  const chosen=[],counts={chain:0,bonus:0};
+  for(const n of next){const key=planKey(n.state),phase=n.state.pending?.phase;
+   if(seen.has(key)||counts[phase]>=Math.ceil(width/2))continue;
+   seen.add(key);counts[phase]++;chosen.push(n);if(chosen.length>=width)break;
+  }
+  frontier=chosen;
+ }
+ if(allowSwap&&!root.pending&&initialHand.length&&!ctx.stop()){
+  // Discard redundant or low-value cards but preserve at least one useful
+  // function for recovery and avoid throwing away every tactical operator.
+  const useful=new Set(terminal.filter(n=>n.cost===1&&(n.state.boards[actor].length>root.boards[actor].length||n.state.boards[1-actor].length<root.boards[1-actor].length)).map(n=>n.path[0].cardIndex));
+  const seenIds=new Set(),indices=[];
+  initialHand.forEach((id,i)=>{const duplicate=seenIds.has(id);seenIds.add(id);if(!useful.has(i)&&(duplicate||id==='ZERO'||['REFLECT','PLUS_C','ADD','SUB'].includes(id)))indices.push(i);});
+  if(!indices.length&&!useful.size){const i=initialHand.findIndex(id=>!LIMIT_CARDS.includes(id)&&cardPool(id)==='operator');indices.push(i>=0?i:0);}
+  if(indices.length){const move={discard:true,cardIndex:indices[0],cardIndices:indices},p=ctx.run(root,move);
+   if(p?.ok)retain({state:p.state,path:[move],cost:0,remaining:initialHand.filter((_,i)=>!indices.includes(i)),swap:true},terminal);
+  }
+ }
+ terminal.sort((a,b)=>b.score-a.score);
+ const selected=[],firstSeen=new Set();
+ for(const n of terminal){const key=JSON.stringify(n.path[0]);if(firstSeen.has(key))continue;firstSeen.add(key);selected.push(n);if(selected.length>=plans)break;}
+ if(rootSearch&&plans>1){
+  const rescue=root.boards[actor].length===1?terminal.find(n=>n.state.boards[actor].length>1):null;
+  const swap=!root.pending&&selected.every(n=>n.state.boards[1-actor].length===root.boards[1-actor].length&&n.state.boards[actor].length===root.boards[actor].length)?terminal.find(n=>n.swap):null;
+  const alternative=rescue&&!selected.some(n=>n.state.boards[actor].length>1)?rescue:swap&&!selected.some(n=>n.swap)?swap:null;
+  if(alternative){if(selected.length>=plans)selected.pop();selected.push(alternative);}
+ }
+ return selected;
+}
+export function chooseComMove(s,{timeMs,onProgress,now=Date.now,workBudget}={}){
+ if(s.finished||!s.hands[s.turn].length)return s.pending?{pass:true}:null;
+ const cfg=STRATEGY[s.difficulty]||STRATEGY.normal,seed=publicSeed(s),actor=s.turn,random=seeded(seed^0x5e4a8712);
+ const duration=timeMs??cfg.ms,start=now(),deadline=start+duration,limit=workBudget??cfg.budget;let work=0,ceiling=limit,phaseDeadline=deadline;
+ const stop=()=>work>=ceiling||now()>=phaseDeadline;
+ const tick=()=>{if(stop())return true;work++;return false;};
+ const ctx={stop,tick,run:(state,move)=>tick()?null:preview(state,move)};
+ ctx.evaluate=createStrategicEvaluator(stop);
+ const fallback=s.pending?{pass:true}:{discard:true,cardIndex:0,cardIndices:[0]};
+ let best=fallback;onProgress?.(best);
+ const root=hypothetical(s,seed),rootBudget=Math.max(1,Math.floor(limit*.45));
+ ceiling=rootBudget;phaseDeadline=start+duration*.38;
+ const candidates=planTurn(root,ctx,{width:cfg.width,depth:cfg.depth,plans:cfg.plans,rootSearch:true,onBest:n=>{best=n.path[0];onProgress?.(best,{phase:'turn',plies:1});}});
+ if(!candidates.length)return best;
+ best=candidates[0].path[0];onProgress?.(best);
+ if(candidates[0].state.finished&&candidates[0].state.winner===actor)return best;
+ // Common random scenarios for each candidate: replay the known turn on
+ // independently sampled hands/decks, then opponent reply and our next turn.
+ // Only complete rounds count, avoiding bias from partial timeouts.
+ const outcomes=candidates.map(n=>({n,sum:0,count:0,worst:Infinity}));
+ ceiling=limit;phaseDeadline=deadline;
+ for(let sample=0;sample<cfg.samples&&!stop();sample++){
+  const scenario=hypothetical(s,(seed+Math.imul(sample+1,0x9e3779b9))>>>0);
+  const round=[];
+  for(const o of outcomes){
+   if(stop())break;
+   let state=scenario,valid=true;
+   for(const move of o.n.path){const p=ctx.run(state,move);if(!p?.ok){valid=false;break;}state=p.state;}
+   if(!valid||state.turn===actor&&!state.finished)break;
+   const initial=ctx.evaluate(state,actor);
+   for(let ply=1;ply<cfg.horizon&&!state.finished;ply++){
+    const moves=planTurn(state,ctx,{width:1,depth:2,plans:1,allowSwap:false,quick:true});
+    if(!moves.length){if(stop()){valid=false;break;}const p=ctx.run(state,state.pending?{pass:true}:{discard:true,cardIndex:0});if(!p?.ok){valid=false;break;}state=p.state;}
+    else state=moves[0].state;
+   }
+   if(!valid)break;
+   const final=ctx.evaluate(state,actor);
+   round.push({o,value:final>=10000?140:final<=-10000?-160:.30*initial+.70*final});
+  }
+  if(round.length!==outcomes.length)break;
+  for(const {o,value} of round){o.sum+=value;o.count++;o.worst=Math.min(o.worst,value);}
+  let bestScore=-Infinity;
+  for(const o of outcomes){
+   const base=ctx.evaluate(o.n.state,actor,true),future=o.sum/o.count;
+   const exposure=s.boards[actor].length===1&&o.n.state.boards[actor].length===1&&!o.n.state.finished?18:0;
+   const score=.42*base+.58*(.78*future+.22*o.worst)+.45*handQuality(o.n.remaining)-o.n.cost*.60-exposure+random()*cfg.noise;
+   if(score>bestScore){bestScore=score;best=o.n.path[0];}
+  }
+  onProgress?.(best,{phase:'future',plies:cfg.horizon,scenarios:sample+1});
+ }
+ return best;
+}
+
 export function getCard(id){return CARD_MAP[id];}
 export {display};
