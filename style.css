@@ -187,3 +187,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .error-kind{font:10px var(--rune);letter-spacing:.05em}
 .error-detail{font:12px/1.4 var(--rune);letter-spacing:.015em;word-break:normal;overflow-wrap:anywhere}
 @media(max-width:700px){.error-kind{font-size:9px}.error-detail{font-size:11px}}
+
+/* v0.42: guidance is neutral, distinct from rejected operations. */
+.preview.notice{flex:none;min-width:0;color:var(--gold);white-space:normal;overflow-wrap:anywhere}
+.notice-detail{font:12px/1.4 var(--rune);letter-spacing:.015em;word-break:normal;overflow-wrap:anywhere}
+@media(max-width:700px){.notice-detail{font-size:11px}}
